@@ -31,8 +31,9 @@ public:
 protected:
     virtual void hmdPresent() = 0;
     virtual bool isHmdMounted() const = 0;
+    virtual void postPreview() {};
 
-    void internalActivate() override;
+    bool internalActivate() override;
     void compositeOverlay() override;
     void compositePointer() override;
     void internalPresent() override;

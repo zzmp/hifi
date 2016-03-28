@@ -30,11 +30,12 @@ public:
     virtual void updateHeadPose(uint32_t frameIndex) override;
 
 protected:
-    void internalActivate() override;
+    bool internalActivate() override;
     void internalDeactivate() override;
 
     void hmdPresent() override;
     bool isHmdMounted() const override;
+    void postPreview() override;
 
 private:
     vr::IVRSystem* _system { nullptr };

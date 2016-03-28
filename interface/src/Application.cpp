@@ -195,6 +195,7 @@ static const QString FBX_EXTENSION  = ".fbx";
 static const QString OBJ_EXTENSION  = ".obj";
 static const QString AVA_JSON_EXTENSION = ".ava.json";
 
+static const int MSECS_PER_SEC = 1000;
 static const int MIRROR_VIEW_TOP_PADDING = 5;
 static const int MIRROR_VIEW_LEFT_PADDING = 10;
 static const int MIRROR_VIEW_WIDTH = 265;
@@ -239,25 +240,26 @@ class DeadlockWatchdogThread : public QThread {
 public:
     static const unsigned long HEARTBEAT_CHECK_INTERVAL_SECS = 1;
     static const unsigned long HEARTBEAT_UPDATE_INTERVAL_SECS = 1;
-    static const unsigned long MAX_HEARTBEAT_AGE_USECS = 10 * USECS_PER_SECOND;
-
+    static const unsigned long HEARTBEAT_REPORT_INTERVAL_USECS = 5 * USECS_PER_SECOND;
+    static const unsigned long MAX_HEARTBEAT_AGE_USECS = 30 * USECS_PER_SECOND;
+    static const int WARNING_ELAPSED_HEARTBEAT = 500 * USECS_PER_MSEC; // warn if elapsed heartbeat average is large
+    static const int HEARTBEAT_SAMPLES = 100000; // ~5 seconds worth of samples
+    
     // Set the heartbeat on launch
     DeadlockWatchdogThread() {
         setObjectName("Deadlock Watchdog");
-        QTimer* heartbeatTimer = new QTimer();
         // Give the heartbeat an initial value
-        updateHeartbeat();
-        connect(heartbeatTimer, &QTimer::timeout, [this] {
-            updateHeartbeat();
-        });
-        heartbeatTimer->start(HEARTBEAT_UPDATE_INTERVAL_SECS * MSECS_PER_SECOND);
+        _heartbeat = usecTimestampNow();
         connect(qApp, &QCoreApplication::aboutToQuit, [this] {
             _quit = true;
         });
     }
 
     void updateHeartbeat() {
-        _heartbeat = usecTimestampNow();
+        auto now = usecTimestampNow();
+        auto elapsed = now - _heartbeat;
+        _movingAverage.addSample(elapsed);
+        _heartbeat = now;
     }
 
     void deadlockDetectionCrash() {
@@ -268,10 +270,52 @@ public:
     void run() override {
         while (!_quit) {
             QThread::sleep(HEARTBEAT_UPDATE_INTERVAL_SECS);
+
+            uint64_t lastHeartbeat = _heartbeat; // sample atomic _heartbeat, because we could context switch away and have it updated on us
+            uint64_t now = usecTimestampNow();
+            auto lastHeartbeatAge = (now > lastHeartbeat) ? now - lastHeartbeat : 0;
+            auto sinceLastReport = (now > _lastReport) ? now - _lastReport : 0;
+            auto elapsedMovingAverage = _movingAverage.getAverage();
+
+            if (elapsedMovingAverage > _maxElapsedAverage) {
+                qDebug() << "DEADLOCK WATCHDOG NEW maxElapsedAverage:"
+                    << "lastHeartbeatAge:" << lastHeartbeatAge
+                    << "elapsedMovingAverage:" << elapsedMovingAverage
+                    << "maxElapsed:" << _maxElapsed
+                    << "PREVIOUS maxElapsedAverage:" << _maxElapsedAverage
+                    << "NEW maxElapsedAverage:" << elapsedMovingAverage
+                    << "samples:" << _movingAverage.getSamples();
+                _maxElapsedAverage = elapsedMovingAverage;
+            }
+            if (lastHeartbeatAge > _maxElapsed) {
+                qDebug() << "DEADLOCK WATCHDOG NEW maxElapsed:"
+                    << "lastHeartbeatAge:" << lastHeartbeatAge
+                    << "elapsedMovingAverage:" << elapsedMovingAverage
+                    << "PREVIOUS maxElapsed:" << _maxElapsed
+                    << "NEW maxElapsed:" << lastHeartbeatAge
+                    << "maxElapsedAverage:" << _maxElapsedAverage
+                    << "samples:" << _movingAverage.getSamples();
+                _maxElapsed = lastHeartbeatAge;
+            }
+            if ((sinceLastReport > HEARTBEAT_REPORT_INTERVAL_USECS) || (elapsedMovingAverage > WARNING_ELAPSED_HEARTBEAT)) {
+                qDebug() << "DEADLOCK WATCHDOG STATUS -- lastHeartbeatAge:" << lastHeartbeatAge
+                         << "elapsedMovingAverage:" << elapsedMovingAverage
+                         << "maxElapsed:" << _maxElapsed
+                         << "maxElapsedAverage:" << _maxElapsedAverage
+                         << "samples:" << _movingAverage.getSamples();
+                _lastReport = now;
+            }
+
 #ifdef NDEBUG
-            auto now = usecTimestampNow();
-            auto lastHeartbeatAge = now - _heartbeat;
             if (lastHeartbeatAge > MAX_HEARTBEAT_AGE_USECS) {
+                qDebug() << "DEADLOCK DETECTED -- "
+                         << "lastHeartbeatAge:" << lastHeartbeatAge
+                         << "[ lastHeartbeat :" << lastHeartbeat
+                         << "now:" << now << " ]"
+                         << "elapsedMovingAverage:" << elapsedMovingAverage
+                         << "maxElapsed:" << _maxElapsed
+                         << "maxElapsedAverage:" << _maxElapsedAverage
+                         << "samples:" << _movingAverage.getSamples();
                 deadlockDetectionCrash();
             }
 #endif
@@ -279,10 +323,19 @@ public:
     }
 
     static std::atomic<uint64_t> _heartbeat;
+    static std::atomic<uint64_t> _lastReport;
+    static std::atomic<uint64_t> _maxElapsed;
+    static std::atomic<int> _maxElapsedAverage;
+    static ThreadSafeMovingAverage<int, HEARTBEAT_SAMPLES> _movingAverage;
+
     bool _quit { false };
 };
 
 std::atomic<uint64_t> DeadlockWatchdogThread::_heartbeat;
+std::atomic<uint64_t> DeadlockWatchdogThread::_lastReport;
+std::atomic<uint64_t> DeadlockWatchdogThread::_maxElapsed;
+std::atomic<int> DeadlockWatchdogThread::_maxElapsedAverage;
+ThreadSafeMovingAverage<int, DeadlockWatchdogThread::HEARTBEAT_SAMPLES> DeadlockWatchdogThread::_movingAverage;
 
 #ifdef Q_OS_WIN
 class MyNativeEventFilter : public QAbstractNativeEventFilter {
@@ -365,7 +418,7 @@ bool setupEssentials(int& argc, char** argv) {
 
     Setting::preInit();
 
-    CrashHandler::checkForAndHandleCrash();
+    bool previousSessionCrashed = CrashHandler::checkForAndHandleCrash();
     CrashHandler::writeRunningMarkerFiler();
     qAddPostRoutine(CrashHandler::deleteRunningMarkerFile);
 
@@ -427,7 +480,7 @@ bool setupEssentials(int& argc, char** argv) {
     DependencyManager::set<InterfaceParentFinder>();
     DependencyManager::set<EntityTreeRenderer>(true, qApp, qApp);
     DependencyManager::set<CompositorHelper>();
-    return true;
+    return previousSessionCrashed;
 }
 
 // FIXME move to header, or better yet, design some kind of UI manager
@@ -448,10 +501,13 @@ PluginContainer* _pluginContainer;
 OffscreenGLCanvas* _chromiumShareContext { nullptr };
 Q_GUI_EXPORT void qt_gl_set_global_share_context(QOpenGLContext *context);
 
+Setting::Handle<int> sessionRunTime{ "sessionRunTime", 0 };
+
 Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer) :
     QApplication(argc, argv),
     _window(new MainWindow(desktop())),
-    _dependencyManagerIsSetup(setupEssentials(argc, argv)),
+    _sessionRunTimer(startupTimer),
+    _previousSessionCrashed(setupEssentials(argc, argv)),
     _undoStackScriptingInterface(&_undoStack),
     _frameCount(0),
     _fps(60.0f),
@@ -601,7 +657,7 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer) :
     connect(&domainHandler, SIGNAL(disconnectedFromDomain()), SLOT(clearDomainOctreeDetails()));
 
     // update our location every 5 seconds in the metaverse server, assuming that we are authenticated with one
-    const qint64 DATA_SERVER_LOCATION_CHANGE_UPDATE_MSECS = 5 * 1000;
+    const qint64 DATA_SERVER_LOCATION_CHANGE_UPDATE_MSECS = 5 * MSECS_PER_SEC;
 
     auto discoverabilityManager = DependencyManager::get<DiscoverabilityManager>();
     connect(&locationUpdateTimer, &QTimer::timeout, discoverabilityManager.data(), &DiscoverabilityManager::updateLocation);
@@ -623,7 +679,7 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer) :
     // connect to appropriate slots on AccountManager
     AccountManager& accountManager = AccountManager::getInstance();
 
-    const qint64 BALANCE_UPDATE_INTERVAL_MSECS = 5 * 1000;
+    const qint64 BALANCE_UPDATE_INTERVAL_MSECS = 5 * MSECS_PER_SEC;
 
     connect(&balanceUpdateTimer, &QTimer::timeout, &accountManager, &AccountManager::updateBalance);
     balanceUpdateTimer.start(BALANCE_UPDATE_INTERVAL_MSECS);
@@ -638,7 +694,9 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer) :
     accountManager.setIsAgent(true);
     accountManager.setAuthURL(NetworkingConstants::METAVERSE_SERVER_URL);
 
-    UserActivityLogger::getInstance().launch(applicationVersion());
+    // sessionRunTime will be reset soon by loadSettings. Grab it now to get previous session value.
+    // The value will be 0 if the user blew away settings this session, which is both a feature and a bug.
+    UserActivityLogger::getInstance().launch(applicationVersion(), _previousSessionCrashed, sessionRunTime.get());
 
     // once the event loop has started, check and signal for an access token
     QMetaObject::invokeMethod(&accountManager, "checkAndSignalForAccessToken", Qt::QueuedConnection);
@@ -1375,6 +1433,8 @@ void Application::initializeUi() {
 
 void Application::paintGL() {
 
+    updateHeartbeat();
+
     // Some plugins process message events, potentially leading to
     // re-entering a paint event.  don't allow further processing if this
     // happens
@@ -1409,7 +1469,7 @@ void Application::paintGL() {
         _lastFramesPerSecondUpdate = now;
     }
 
-    PROFILE_RANGE(__FUNCTION__);
+    PROFILE_RANGE_EX(__FUNCTION__, 0xff0000ff, (uint64_t)_frameCount);
     PerformanceTimer perfTimer("paintGL");
 
     if (nullptr == _displayPlugin) {
@@ -2496,6 +2556,8 @@ static uint32_t _renderedFrameIndex { INVALID_FRAME };
 
 void Application::idle(uint64_t now) {
 
+    updateHeartbeat();
+
     if (_aboutToQuit || _inPaint) {
         return; // bail early, nothing to do here.
     }
@@ -2548,11 +2610,12 @@ void Application::idle(uint64_t now) {
         return;
     }
 
+    PROFILE_RANGE(__FUNCTION__);
+
     // We're going to execute idle processing, so restart the last idle timer
     _lastTimeUpdated.start();
 
     {
-        PROFILE_RANGE(__FUNCTION__);
         static uint64_t lastIdleStart{ now };
         uint64_t idleStartToStartDuration = now - lastIdleStart;
         if (idleStartToStartDuration != 0) {
@@ -2804,6 +2867,7 @@ bool Application::exportEntities(const QString& filename, float x, float y, floa
 
 void Application::loadSettings() {
 
+    sessionRunTime.set(0); // Just clean living. We're about to saveSettings, which will update value.
     DependencyManager::get<AudioClient>()->loadSettings();
     DependencyManager::get<LODManager>()->loadSettings();
 
@@ -2817,6 +2881,7 @@ void Application::loadSettings() {
 }
 
 void Application::saveSettings() {
+    sessionRunTime.set(_sessionRunTimer.elapsed() / MSECS_PER_SEC);
     DependencyManager::get<AudioClient>()->saveSettings();
     DependencyManager::get<LODManager>()->saveSettings();
 
@@ -3138,6 +3203,9 @@ void Application::updateDialogs(float deltaTime) {
 }
 
 void Application::update(float deltaTime) {
+
+    PROFILE_RANGE_EX(__FUNCTION__, 0xffff0000, (uint64_t)_frameCount + 1);
+
     bool showWarnings = Menu::getInstance()->isOptionChecked(MenuOption::PipelineWarnings);
     PerformanceWarning warn(showWarnings, "Application::update()");
 
@@ -3228,7 +3296,9 @@ void Application::update(float deltaTime) {
     controller::Pose leftHandPose = userInputMapper->getPoseState(controller::Action::LEFT_HAND);
     controller::Pose rightHandPose = userInputMapper->getPoseState(controller::Action::RIGHT_HAND);
     auto myAvatarMatrix = createMatFromQuatAndPos(myAvatar->getOrientation(), myAvatar->getPosition());
-    myAvatar->setHandControllerPosesInWorldFrame(leftHandPose.transform(myAvatarMatrix), rightHandPose.transform(myAvatarMatrix));
+    auto worldToSensorMatrix = glm::inverse(myAvatar->getSensorToWorldMatrix());
+    auto avatarToSensorMatrix = worldToSensorMatrix * myAvatarMatrix;
+    myAvatar->setHandControllerPosesInSensorFrame(leftHandPose.transform(avatarToSensorMatrix), rightHandPose.transform(avatarToSensorMatrix));
 
     updateThreads(deltaTime); // If running non-threaded, then give the threads some time to process...
     updateDialogs(deltaTime); // update various stats dialogs if present
@@ -3236,9 +3306,13 @@ void Application::update(float deltaTime) {
     QSharedPointer<AvatarManager> avatarManager = DependencyManager::get<AvatarManager>();
 
     if (_physicsEnabled) {
+        PROFILE_RANGE_EX("Physics", 0xffff0000, (uint64_t)getActiveDisplayPlugin()->presentCount());
+
         PerformanceTimer perfTimer("physics");
 
         {
+            PROFILE_RANGE_EX("UpdateStats", 0xffffff00, (uint64_t)getActiveDisplayPlugin()->presentCount());
+
             PerformanceTimer perfTimer("updateStates)");
             static VectorOfMotionStates motionStates;
             _entitySimulation.getObjectsToRemoveFromPhysics(motionStates);
@@ -3271,12 +3345,14 @@ void Application::update(float deltaTime) {
             });
         }
         {
+            PROFILE_RANGE_EX("StepSimulation", 0xffff8000, (uint64_t)getActiveDisplayPlugin()->presentCount());
             PerformanceTimer perfTimer("stepSimulation");
             getEntities()->getTree()->withWriteLock([&] {
                 _physicsEngine->stepSimulation();
             });
         }
         {
+            PROFILE_RANGE_EX("HarvestChanges", 0xffffff00, (uint64_t)getActiveDisplayPlugin()->presentCount());
             PerformanceTimer perfTimer("havestChanges");
             if (_physicsEngine->hasOutgoingChanges()) {
                 getEntities()->getTree()->withWriteLock([&] {
@@ -3311,14 +3387,24 @@ void Application::update(float deltaTime) {
 
         qApp->setAvatarSimrateSample(1.0f / deltaTime);
 
-        avatarManager->updateOtherAvatars(deltaTime);
+        {
+            PROFILE_RANGE_EX("OtherAvatars", 0xffff00ff, (uint64_t)getActiveDisplayPlugin()->presentCount());
+            avatarManager->updateOtherAvatars(deltaTime);
+        }
 
         qApp->updateMyAvatarLookAtPosition();
 
-        avatarManager->updateMyAvatar(deltaTime);
+        // update sensorToWorldMatrix for camera and hand controllers
+        myAvatar->updateSensorToWorldMatrix();
+
+        {
+            PROFILE_RANGE_EX("MyAvatar", 0xffff00ff, (uint64_t)getActiveDisplayPlugin()->presentCount());
+            avatarManager->updateMyAvatar(deltaTime);
+        }
     }
 
     {
+        PROFILE_RANGE_EX("Overlays", 0xffff0000, (uint64_t)getActiveDisplayPlugin()->presentCount());
         PerformanceTimer perfTimer("overlays");
         _overlays.update(deltaTime);
     }
@@ -3338,6 +3424,7 @@ void Application::update(float deltaTime) {
 
     // Update my voxel servers with my current voxel query...
     {
+        PROFILE_RANGE_EX("QueryOctree", 0xffff0000, (uint64_t)getActiveDisplayPlugin()->presentCount());
         PerformanceTimer perfTimer("queryOctree");
         quint64 sinceLastQuery = now - _lastQueriedTime;
         const quint64 TOO_LONG_SINCE_LAST_QUERY = 3 * USECS_PER_SECOND;
@@ -3374,9 +3461,6 @@ void Application::update(float deltaTime) {
             QMetaObject::invokeMethod(DependencyManager::get<AudioClient>().data(), "sendDownstreamAudioStatsPacket", Qt::QueuedConnection);
         }
     }
-
-    // update sensorToWorldMatrix for rendering camera.
-    myAvatar->updateSensorToWorldMatrix();
 }
 
 
@@ -4667,13 +4751,18 @@ qreal Application::getDevicePixelRatio() {
 }
 
 DisplayPlugin* Application::getActiveDisplayPlugin() {
-    std::unique_lock<std::recursive_mutex> lock(_displayPluginLock);
-    if (nullptr == _displayPlugin && QThread::currentThread() == thread()) {
-        updateDisplayMode();
-        Q_ASSERT(_displayPlugin);
+    DisplayPlugin* result = nullptr;
+    if (QThread::currentThread() == thread()) {
+        if (nullptr == _displayPlugin) {
+            updateDisplayMode();
+            Q_ASSERT(_displayPlugin);
+        }
+        result = _displayPlugin.get();
+    } else {
+        std::unique_lock<std::mutex> lock(_displayPluginLock);
+        result = _displayPlugin.get();
     }
-    
-    return _displayPlugin.get();
+    return result;
 }
 
 const DisplayPlugin* Application::getActiveDisplayPlugin() const {
@@ -4791,20 +4880,52 @@ void Application::updateDisplayMode() {
         return;
     }
 
-    if (_displayPlugin) {
-        _displayPlugin->deactivate();
-    }
-
     auto offscreenUi = DependencyManager::get<OffscreenUi>();
 
-    // FIXME probably excessive and useless context switching
-    _offscreenContext->makeCurrent();
-    newDisplayPlugin->activate();
-    _offscreenContext->makeCurrent();
-    offscreenUi->resize(fromGlm(newDisplayPlugin->getRecommendedUiSize()));
-    _offscreenContext->makeCurrent();
-    getApplicationCompositor().setDisplayPlugin(newDisplayPlugin);
-    _displayPlugin = newDisplayPlugin;
+    // Make the switch atomic from the perspective of other threads
+    {
+        std::unique_lock<std::mutex> lock(_displayPluginLock);
+
+        auto oldDisplayPlugin = _displayPlugin;
+        if (_displayPlugin) {
+            _displayPlugin->deactivate();
+        }
+
+        // FIXME probably excessive and useless context switching
+        _offscreenContext->makeCurrent();
+
+        bool active = newDisplayPlugin->activate();
+
+        if (!active) {
+            // If the new plugin fails to activate, fallback to last display
+            qWarning() << "Failed to activate display: " << newDisplayPlugin->getName();
+            newDisplayPlugin = oldDisplayPlugin;
+
+            if (newDisplayPlugin) {
+                qWarning() << "Falling back to last display: " << newDisplayPlugin->getName();
+                active = newDisplayPlugin->activate();
+            }
+
+            // If there is no last display, or
+            // If the last display fails to activate, fallback to desktop
+            if (!active) {
+                newDisplayPlugin = displayPlugins.at(0);
+                qWarning() << "Falling back to display: " << newDisplayPlugin->getName();
+                active = newDisplayPlugin->activate();
+            }
+
+            if (!active) {
+                qFatal("Failed to activate fallback plugin");
+            }
+        }
+
+        _offscreenContext->makeCurrent();
+        offscreenUi->resize(fromGlm(newDisplayPlugin->getRecommendedUiSize()));
+        _offscreenContext->makeCurrent();
+        getApplicationCompositor().setDisplayPlugin(newDisplayPlugin);
+        _displayPlugin = newDisplayPlugin;
+    }
+
 
     emit activeDisplayPluginChanged();
 
