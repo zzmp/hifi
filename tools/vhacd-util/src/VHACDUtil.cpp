@@ -202,7 +202,7 @@ bool vhacd::VHACDUtil::computeVHACD(FBXGeometry& geometry,
 
     std::cout << "Performing V-HACD computation on " << endMeshIndex - startMeshIndex << " meshes ..... " << std::endl;
 
-    result.meshExtents.reset();
+    result.meshes.meshExtents.reset();
     result.meshes.append(FBXMesh());
     FBXMesh &resultMesh = result.meshes.last();
 
