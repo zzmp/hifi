@@ -39,17 +39,18 @@
 
 using namespace std;
 
-QStringList FBXGeometry::getJointNames() const {
+QStringList FBXJoints::getJointNames() const {
     QStringList names;
-    foreach (const FBXJoint& joint, joints) {
+    names.reserve(size());
+    for (const FBXJoint& joint : *this) {
         names.append(joint.name);
     }
     return names;
 }
 
-bool FBXGeometry::hasBlendedMeshes() const {
-    if (!meshes.isEmpty()) {
-        foreach (const FBXMesh& mesh, meshes) {
+bool FBXMeshes::hasBlendedMeshes() const {
+    if (!isEmpty()) {
+        for (const FBXMesh& mesh : *this) {
             if (!mesh.blendshapes.isEmpty()) {
                 return true;
             }
@@ -58,7 +59,7 @@ bool FBXGeometry::hasBlendedMeshes() const {
     return false;
 }
 
-Extents FBXGeometry::getUnscaledMeshExtents() const {
+Extents FBXMeshes::getUnscaledMeshExtents() const {
     const Extents& extents = meshExtents;
 
     // even though our caller asked for "unscaled" we need to include any fst scaling, translation, and rotation, which
@@ -70,42 +71,43 @@ Extents FBXGeometry::getUnscaledMeshExtents() const {
     return scaledExtents;
 }
 
+bool FBXMeshes::convexHullContainsHelper(const glm::vec3& point, const FBXMesh& mesh,
+                                        const QVector<int>& indices, int primitiveSize) const {
+    // Check whether the point is "behind" all the primitives.
+    int verticesSize = mesh.vertices.size();
+    for (int j = 0;
+        j < indices.size() - 2; // -2 in case the vertices aren't the right size -- we access j + 2 below
+        j += primitiveSize) {
+        if (indices[j] < verticesSize &&
+            indices[j + 1] < verticesSize &&
+            indices[j + 2] < verticesSize &&
+            !isPointBehindTrianglesPlane(point,
+                mesh.vertices[indices[j]],
+                mesh.vertices[indices[j + 1]],
+                mesh.vertices[indices[j + 2]])) {
+            // it's not behind at least one so we bail
+            return false;
+        }
+    }
+    return true;
+}
+
 // TODO: Move to model::Mesh when Sam's ready
-bool FBXGeometry::convexHullContains(const glm::vec3& point) const {
+bool FBXMeshes::convexHullContains(const glm::vec3& point) const {
     if (!getUnscaledMeshExtents().containsPoint(point)) {
         return false;
     }
 
-    auto checkEachPrimitive = [=](FBXMesh& mesh, QVector<int> indices, int primitiveSize) -> bool {
-        // Check whether the point is "behind" all the primitives.
-        int verticesSize = mesh.vertices.size();
-        for (int j = 0;
-             j < indices.size() - 2; // -2 in case the vertices aren't the right size -- we access j + 2 below
-             j += primitiveSize) {
-            if (indices[j] < verticesSize &&
-                indices[j + 1] < verticesSize &&
-                indices[j + 2] < verticesSize &&
-                !isPointBehindTrianglesPlane(point,
-                                             mesh.vertices[indices[j]],
-                                             mesh.vertices[indices[j + 1]],
-                                             mesh.vertices[indices[j + 2]])) {
-                // it's not behind at least one so we bail
-                return false;
-            }
-        }
-        return true;
-    };
-
     // Check that the point is contained in at least one convex mesh.
-    for (auto mesh : meshes) {
+    for (const auto& mesh : *this) {
         bool insideMesh = true;
 
         // To be considered inside a convex mesh,
         // the point needs to be "behind" all the primitives respective planes.
-        for (auto part : mesh.parts) {
+        for (const auto& part : mesh.parts) {
             // run through all the triangles and quads
-            if (!checkEachPrimitive(mesh, part.triangleIndices, 3) ||
-                !checkEachPrimitive(mesh, part.quadIndices, 4)) {
+            if (!convexHullContainsHelper(point, mesh, part.triangleIndices, 3) ||
+                !convexHullContainsHelper(point, mesh, part.quadIndices, 4)) {
                 // If not, the point is outside, bail for this mesh
                 insideMesh = false;
                 continue;
@@ -121,9 +123,9 @@ bool FBXGeometry::convexHullContains(const glm::vec3& point) const {
     return false;
 }
 
-QString FBXGeometry::getModelNameOfMesh(int meshIndex) const {
-    if (meshIndicesToModelNames.contains(meshIndex)) {
-        return meshIndicesToModelNames.value(meshIndex);
+QString FBXMeshes::getModelNameOfMesh(int meshIndex) const {
+    if (_meshIndicesToModelNames.contains(meshIndex)) {
+        return _meshIndicesToModelNames.value(meshIndex);
     }
     return QString();
 }
@@ -1192,7 +1194,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
     float offsetScale = mapping.value("scale", 1.0f).toFloat() * unitScaleFactor * METERS_PER_CENTIMETER;
     glm::quat offsetRotation = glm::quat(glm::radians(glm::vec3(mapping.value("rx").toFloat(),
             mapping.value("ry").toFloat(), mapping.value("rz").toFloat())));
-    geometry.offset = glm::translate(glm::vec3(mapping.value("tx").toFloat(), mapping.value("ty").toFloat(),
+    geometry.joints.offset = geometry.meshes.offset = glm::translate(glm::vec3(mapping.value("tx").toFloat(), mapping.value("ty").toFloat(),
         mapping.value("tz").toFloat())) * glm::mat4_cast(offsetRotation) *
             glm::scale(glm::vec3(offsetScale, offsetScale, offsetScale));
 
@@ -1246,7 +1248,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
 
     // convert the models to joints
     QVariantList freeJoints = mapping.values("freeJoint");
-    geometry.hasSkeletonJoints = false;
+    geometry.joints._hasSkeletonJoints = false;
     foreach (const QString& modelID, modelIDs) {
         const FBXModel& model = models[modelID];
         FBXJoint joint;
@@ -1274,7 +1276,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
         joint.rotationMax = model.rotationMax;
         glm::quat combinedRotation = joint.preRotation * joint.rotation * joint.postRotation;
         if (joint.parentIndex == -1) {
-            joint.transform = geometry.offset * glm::translate(joint.translation) * joint.preTransform *
+            joint.transform = geometry.meshes.offset * glm::translate(joint.translation) * joint.preTransform *
                 glm::mat4_cast(combinedRotation) * joint.postTransform;
             joint.inverseDefaultRotation = glm::inverse(combinedRotation);
            joint.distanceToParent = 0.0f;
@@ -1293,7 +1295,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
         foreach (const QString& childID, _connectionChildMap.values(modelID)) {
             QString type = typeFlags.value(childID);
             if (!type.isEmpty()) {
-                geometry.hasSkeletonJoints |= (joint.isSkeletonJoint = type.toLower().contains("Skeleton"));
+                geometry.joints._hasSkeletonJoints |= (joint.isSkeletonJoint = type.toLower().contains("Skeleton"));
                 break;
             }
         }
@@ -1301,7 +1303,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
         joint.bindTransformFoundInCluster = false;
 
         geometry.joints.append(joint);
-        geometry.jointIndices.insert(model.name, geometry.joints.size());
+        geometry.joints.indices.insert(model.name, geometry.joints.size());
 
         QString rotationID = localRotations.value(modelID);
         AnimationCurve xRotCurve = animationCurves.value(xComponents.value(rotationID));
@@ -1333,29 +1335,29 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
     shapeVertices.resize(geometry.joints.size());
 
     // find our special joints
-    geometry.leftEyeJointIndex = modelIDs.indexOf(jointEyeLeftID);
-    geometry.rightEyeJointIndex = modelIDs.indexOf(jointEyeRightID);
-    geometry.neckJointIndex = modelIDs.indexOf(jointNeckID);
-    geometry.rootJointIndex = modelIDs.indexOf(jointRootID);
-    geometry.leanJointIndex = modelIDs.indexOf(jointLeanID);
-    geometry.headJointIndex = modelIDs.indexOf(jointHeadID);
-    geometry.leftHandJointIndex = modelIDs.indexOf(jointLeftHandID);
-    geometry.rightHandJointIndex = modelIDs.indexOf(jointRightHandID);
-    geometry.leftToeJointIndex = modelIDs.indexOf(jointLeftToeID);
-    geometry.rightToeJointIndex = modelIDs.indexOf(jointRightToeID);
+    geometry.joints.leftEyeJointIndex = modelIDs.indexOf(jointEyeLeftID);
+    geometry.joints.rightEyeJointIndex = modelIDs.indexOf(jointEyeRightID);
+    geometry.joints.neckJointIndex = modelIDs.indexOf(jointNeckID);
+    geometry.joints.rootJointIndex = modelIDs.indexOf(jointRootID);
+    geometry.joints.leanJointIndex = modelIDs.indexOf(jointLeanID);
+    geometry.joints.headJointIndex = modelIDs.indexOf(jointHeadID);
+    geometry.joints.leftHandJointIndex = modelIDs.indexOf(jointLeftHandID);
+    geometry.joints.rightHandJointIndex = modelIDs.indexOf(jointRightHandID);
+    geometry.joints.leftToeJointIndex = modelIDs.indexOf(jointLeftToeID);
+    geometry.joints.rightToeJointIndex = modelIDs.indexOf(jointRightToeID);
 
     foreach (const QString& id, humanIKJointIDs) {
-        geometry.humanIKJointIndices.append(modelIDs.indexOf(id));
+        geometry._humanIKJointIndices.append(modelIDs.indexOf(id));
     }
 
     // extract the translation component of the neck transform
-    if (geometry.neckJointIndex != -1) {
-        const glm::mat4& transform = geometry.joints.at(geometry.neckJointIndex).transform;
-        geometry.neckPivot = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+    if (geometry.joints.neckJointIndex != -1) {
+        const glm::mat4& transform = geometry.joints.at(geometry.joints.neckJointIndex).transform;
+        geometry._neckPivot = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
     }
 
-    geometry.bindExtents.reset();
-    geometry.meshExtents.reset();
+    geometry.meshes.bindExtents.reset();
+    geometry.meshes.meshExtents.reset();
 
     // Create the Material Library
     consolidateFBXMaterials();
@@ -1376,8 +1378,8 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
         // compute the mesh extents from the transformed vertices
         foreach (const glm::vec3& vertex, extracted.mesh.vertices) {
             glm::vec3 transformedVertex = glm::vec3(modelTransform * glm::vec4(vertex, 1.0f));
-            geometry.meshExtents.minimum = glm::min(geometry.meshExtents.minimum, transformedVertex);
-            geometry.meshExtents.maximum = glm::max(geometry.meshExtents.maximum, transformedVertex);
+            geometry.meshes.meshExtents.minimum = glm::min(geometry.meshes.meshExtents.minimum, transformedVertex);
+            geometry.meshes.meshExtents.maximum = glm::max(geometry.meshes.meshExtents.maximum, transformedVertex);
 
             extracted.mesh.meshExtents.minimum = glm::min(extracted.mesh.meshExtents.minimum, transformedVertex);
             extracted.mesh.meshExtents.maximum = glm::max(extracted.mesh.meshExtents.maximum, transformedVertex);
@@ -1473,8 +1475,8 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
                 joint.bindTransformFoundInCluster = true;
 
                 // update the bind pose extents
-                glm::vec3 bindTranslation = extractTranslation(geometry.offset * joint.bindTransform);
-                geometry.bindExtents.addPoint(bindTranslation);
+                glm::vec3 bindTranslation = extractTranslation(geometry.meshes.offset * joint.bindTransform);
+                geometry.meshes.bindExtents.addPoint(bindTranslation);
             }
         }
 
@@ -1589,15 +1591,15 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
             }
 
         }
-        extracted.mesh.isEye = (maxJointIndex == geometry.leftEyeJointIndex || maxJointIndex == geometry.rightEyeJointIndex);
+        extracted.mesh.isEye = (maxJointIndex == geometry.joints.leftEyeJointIndex || maxJointIndex == geometry.joints.rightEyeJointIndex);
 
         buildModelMesh(extracted.mesh, url);
 
         if (extracted.mesh.isEye) {
-            if (maxJointIndex == geometry.leftEyeJointIndex) {
-                geometry.leftEyeSize = extracted.mesh.meshExtents.largestDimension() * offsetScale;
+            if (maxJointIndex == geometry.joints.leftEyeJointIndex) {
+                geometry.meshes.leftEyeSize = extracted.mesh.meshExtents.largestDimension() * offsetScale;
             } else {
-                geometry.rightEyeSize = extracted.mesh.meshExtents.largestDimension() * offsetScale;
+                geometry.meshes.rightEyeSize = extracted.mesh.meshExtents.largestDimension() * offsetScale;
             }
         }
 
@@ -1650,7 +1652,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
             }
         }
     }
-    geometry.palmDirection = parseVec3(mapping.value("palmDirection", "0, -1, 0").toString());
+    geometry._palmDirection = parseVec3(mapping.value("palmDirection", "0, -1, 0").toString());
 
     // Add sitting points
     QVariantHash sittingPoints = mapping.value("sit").toHash();
@@ -1676,7 +1678,7 @@ FBXGeometry* FBXReader::extractFBXGeometry(const QVariantHash& mapping, const QS
             const QString& modelID = ooChildToParent.value(meshID);
             if (modelIDsToNames.contains(modelID)) {
                 const QString& modelName = modelIDsToNames.value(modelID);
-                geometry.meshIndicesToModelNames.insert(meshIndex, modelName);
+                geometry.meshes._meshIndicesToModelNames.insert(meshIndex, modelName);
             }
         }
     }
