@@ -77,7 +77,7 @@ void ScriptableAvatar::update(float deltatime) {
                 const QString& name = animationJointNames[i];
                 // As long as we need the model preRotations anyway, let's get the jointIndex from the bind skeleton rather than
                 // trusting the .fst (which is sometimes not updated to match changes to .fbx).
-                int mapping = _bind->getGeometry().getJointIndex(name);
+                int mapping = _bind->getGeometry().joints.getJointIndex(name);
                 if (mapping != -1 && !_maskedJoints.contains(name)) {
                     JointData& data = _jointData[mapping];
 

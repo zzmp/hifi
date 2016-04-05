@@ -694,7 +694,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // to the visual model and apply them to the collision model (without regard for the
         // collision model's extents).
 
-        glm::vec3 scale = getDimensions() / renderGeometry.getUnscaledMeshExtents().size();
+        glm::vec3 scale = getDimensions() / renderGeometry.meshes.getUnscaledMeshExtents().size();
         // multiply each point by scale before handing the point-set off to the physics engine.
         // also determine the extents of the collision model.
         AABox box;
@@ -720,7 +720,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
 
 bool RenderableModelEntityItem::contains(const glm::vec3& point) const {
     if (EntityItem::contains(point) && _model && _model->isCollisionLoaded()) {
-        return _model->getCollisionFBXGeometry().convexHullContains(worldToEntity(point));
+        return _model->getCollisionFBXGeometry().meshes.convexHullContains(worldToEntity(point));
     }
 
     return false;

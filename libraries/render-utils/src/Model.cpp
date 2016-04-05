@@ -200,7 +200,7 @@ void Model::init() {
 void Model::reset() {
     if (isLoaded()) {
         const FBXGeometry& geometry = getFBXGeometry();
-        _rig->reset(geometry);
+        _rig->reset(geometry.joints);
     }
 }
 
@@ -244,7 +244,7 @@ void Model::initJointStates() {
     const FBXGeometry& geometry = getFBXGeometry();
     glm::mat4 modelOffset = glm::scale(_scale) * glm::translate(_offset);
 
-    _rig->initJointStates(geometry, modelOffset);
+    _rig->initJointStates(geometry.joints, modelOffset);
 }
 
 bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const glm::vec3& direction, float& distance,
@@ -307,7 +307,7 @@ bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const g
                                     intersectedSomething = true;
                                     face = subMeshFace;
                                     surfaceNormal = triangle.getNormal();
-                                    extraInfo = geometry.getModelNameOfMesh(subMeshIndex);
+                                    extraInfo = geometry.meshes.getModelNameOfMesh(subMeshIndex);
                                 }
                             }
                         }
@@ -317,7 +317,7 @@ bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const g
                         intersectedSomething = true;
                         face = subMeshFace;
                         surfaceNormal = subMeshSurfaceNormal;
-                        extraInfo = geometry.getModelNameOfMesh(subMeshIndex);
+                        extraInfo = geometry.meshes.getModelNameOfMesh(subMeshIndex);
                     }
                 }
             }
@@ -660,7 +660,7 @@ Extents Model::getBindExtents() const {
     if (!isActive()) {
         return Extents();
     }
-    const Extents& bindExtents = getFBXGeometry().bindExtents;
+    const Extents& bindExtents = getFBXGeometry().meshes.bindExtents;
     Extents scaledExtents = { bindExtents.minimum * _scale, bindExtents.maximum * _scale };
     return scaledExtents;
 }
@@ -669,12 +669,12 @@ Extents Model::getMeshExtents() const {
     if (!isActive()) {
         return Extents();
     }
-    const Extents& extents = getFBXGeometry().meshExtents;
+    const Extents& extents = getFBXGeometry().meshes.meshExtents;
 
     // even though our caller asked for "unscaled" we need to include any fst scaling, translation, and rotation, which
     // is captured in the offset matrix
-    glm::vec3 minimum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.minimum, 1.0f));
-    glm::vec3 maximum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.maximum, 1.0f));
+    glm::vec3 minimum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.minimum, 1.0f));
+    glm::vec3 maximum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.maximum, 1.0f));
     Extents scaledExtents = { minimum * _scale, maximum * _scale };
     return scaledExtents;
 }
@@ -684,12 +684,12 @@ Extents Model::getUnscaledMeshExtents() const {
         return Extents();
     }
 
-    const Extents& extents = getFBXGeometry().meshExtents;
+    const Extents& extents = getFBXGeometry().meshes.meshExtents;
 
     // even though our caller asked for "unscaled" we need to include any fst scaling, translation, and rotation, which
     // is captured in the offset matrix
-    glm::vec3 minimum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.minimum, 1.0f));
-    glm::vec3 maximum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.maximum, 1.0f));
+    glm::vec3 minimum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.minimum, 1.0f));
+    glm::vec3 maximum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.maximum, 1.0f));
     Extents scaledExtents = { minimum, maximum };
 
     return scaledExtents;
@@ -698,8 +698,8 @@ Extents Model::getUnscaledMeshExtents() const {
 Extents Model::calculateScaledOffsetExtents(const Extents& extents,
                                             glm::vec3 modelPosition, glm::quat modelOrientation) const {
     // we need to include any fst scaling, translation, and rotation, which is captured in the offset matrix
-    glm::vec3 minimum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.minimum, 1.0f));
-    glm::vec3 maximum = glm::vec3(getFBXGeometry().offset * glm::vec4(extents.maximum, 1.0f));
+    glm::vec3 minimum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.minimum, 1.0f));
+    glm::vec3 maximum = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(extents.maximum, 1.0f));
 
     Extents scaledOffsetExtents = { ((minimum + _offset) * _scale),
                                     ((maximum + _offset) * _scale) };
@@ -719,7 +719,7 @@ AABox Model::calculateScaledOffsetAABox(const AABox& box, glm::vec3 modelPositio
 
 glm::vec3 Model::calculateScaledOffsetPoint(const glm::vec3& point) const {
     // we need to include any fst scaling, translation, and rotation, which is captured in the offset matrix
-    glm::vec3 offsetPoint = glm::vec3(getFBXGeometry().offset * glm::vec4(point, 1.0f));
+    glm::vec3 offsetPoint = glm::vec3(getFBXGeometry().meshes.offset * glm::vec4(point, 1.0f));
     glm::vec3 scaledPoint = ((offsetPoint + _offset) * _scale);
     glm::vec3 rotatedPoint = _rotation * scaledPoint;
     glm::vec3 translatedPoint = rotatedPoint + _translation;
@@ -841,7 +841,7 @@ QStringList Model::getJointNames() const {
             Q_RETURN_ARG(QStringList, result));
         return result;
     }
-    return isActive() ? getFBXGeometry().getJointNames() : QStringList();
+    return isActive() ? getFBXGeometry().joints.getJointNames() : QStringList();
 }
 
 class Blender : public QRunnable {
@@ -1041,7 +1041,7 @@ void Model::updateClusterMatrices(glm::vec3 modelPosition, glm::quat modelOrient
         glm::vec4(0.0f, 0.0f, 0.0f, 0.0f),
         glm::vec4(0.0f, 0.0f, 0.0f, 0.0f),
         glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-    auto cauterizeMatrix = _rig->getJointTransform(geometry.neckJointIndex) * zeroScale;
+    auto cauterizeMatrix = _rig->getJointTransform(geometry.joints.neckJointIndex) * zeroScale;
 
     glm::mat4 modelToWorld = glm::mat4_cast(modelOrientation);
     for (int i = 0; i < _meshStates.size(); i++) {
@@ -1086,7 +1086,7 @@ void Model::updateClusterMatrices(glm::vec3 modelPosition, glm::quat modelOrient
     }
 
     // post the blender if we're not currently waiting for one to finish
-    if (geometry.hasBlendedMeshes() && _blendshapeCoefficients != _blendedBlendshapeCoefficients) {
+    if (geometry.meshes.hasBlendedMeshes() && _blendshapeCoefficients != _blendedBlendshapeCoefficients) {
         _blendedBlendshapeCoefficients = _blendshapeCoefficients;
         DependencyManager::get<ModelBlender>()->noteRequiresBlend(getThisPointer());
     }
@@ -1114,7 +1114,7 @@ float Model::getLimbLength(int jointIndex) const {
 bool Model::maybeStartBlender() {
     if (isLoaded()) {
         const FBXGeometry& fbxGeometry = getFBXGeometry();
-        if (fbxGeometry.hasBlendedMeshes()) {
+        if (fbxGeometry.meshes.hasBlendedMeshes()) {
             QThreadPool::globalInstance()->start(new Blender(getThisPointer(), ++_blendNumber, _geometry,
                 fbxGeometry.meshes, _blendshapeCoefficients));
             return true;

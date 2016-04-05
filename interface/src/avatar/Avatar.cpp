@@ -473,7 +473,7 @@ void Avatar::render(RenderArgs* renderArgs, const glm::vec3& cameraPosition) {
                     glm::vec3 position = getHead()->getLeftEyePosition();
                     Transform transform;
                     transform.setTranslation(position);
-                    float eyeDiameter = geometry.leftEyeSize;
+                    float eyeDiameter = geometry.meshes.leftEyeSize;
                     if (eyeDiameter == 0.0f) {
                         eyeDiameter = DEFAULT_EYE_DIAMETER;
                     }
@@ -484,7 +484,7 @@ void Avatar::render(RenderArgs* renderArgs, const glm::vec3& cameraPosition) {
 
                     position = getHead()->getRightEyePosition();
                     transform.setTranslation(position);
-                    eyeDiameter = geometry.rightEyeSize;
+                    eyeDiameter = geometry.meshes.rightEyeSize;
                     if (eyeDiameter == 0.0f) {
                         eyeDiameter = DEFAULT_EYE_DIAMETER;
                     }
@@ -813,7 +813,7 @@ int Avatar::getJointIndex(const QString& name) const {
             Q_RETURN_ARG(int, result), Q_ARG(const QString&, name));
         return result;
     }
-    return _skeletonModel->isActive() ? _skeletonModel->getFBXGeometry().getJointIndex(name) : -1;
+    return _skeletonModel->isActive() ? _skeletonModel->getFBXGeometry().joints.getJointIndex(name) : -1;
 }
 
 QStringList Avatar::getJointNames() const {
@@ -823,7 +823,7 @@ QStringList Avatar::getJointNames() const {
             Q_RETURN_ARG(QStringList, result));
         return result;
     }
-    return _skeletonModel->isActive() ? _skeletonModel->getFBXGeometry().getJointNames() : QStringList();
+    return _skeletonModel->isActive() ? _skeletonModel->getFBXGeometry().joints.getJointNames() : QStringList();
 }
 
 glm::vec3 Avatar::getJointPosition(int index) const {
