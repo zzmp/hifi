@@ -135,6 +135,11 @@ void Material::resetOpacityMap() const {
     _schemaBuffer.edit<Schema>()._key = (uint32)_key._flags.to_ulong();
 }
 
+void Material::releaseTextureMaps() {
+    for (auto& textureMap : _textureMaps) {
+        textureMap.second.reset();
+    }
+}
 
 const TextureMapPointer Material::getTextureMap(MapChannel channel) const {
     auto result = _textureMaps.find(channel);
