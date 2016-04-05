@@ -41,10 +41,10 @@ SkeletonModel::~SkeletonModel() {
 void SkeletonModel::initJointStates() {
     const FBXGeometry& geometry = getFBXGeometry();
     glm::mat4 modelOffset = glm::scale(_scale) * glm::translate(_offset);
-    _rig->initJointStates(geometry, modelOffset);
+    _rig->initJointStates(geometry.joints, modelOffset);
 
     // Determine the default eye position for avatar scale = 1.0
-    int headJointIndex = geometry.headJointIndex;
+    int headJointIndex = geometry.joints.headJointIndex;
     if (0 > headJointIndex || headJointIndex >= _rig->getJointStateCount()) {
         qCWarning(interfaceapp) << "Bad head joint! Got:" << headJointIndex << "jointCount:" << _rig->getJointStateCount();
     }
@@ -52,7 +52,7 @@ void SkeletonModel::initJointStates() {
     getEyeModelPositions(leftEyePosition, rightEyePosition);
     glm::vec3 midEyePosition = (leftEyePosition + rightEyePosition) / 2.0f;
 
-    int rootJointIndex = geometry.rootJointIndex;
+    int rootJointIndex = geometry.joints.rootJointIndex;
     glm::vec3 rootModelPosition;
     getJointPosition(rootJointIndex, rootModelPosition);
 
@@ -120,8 +120,8 @@ void SkeletonModel::updateRig(float deltaTime, glm::mat4 parentTransform) {
             headParams.worldHeadOrientation = head->getFinalOrientationInWorldFrame();
         }
 
-        headParams.leanJointIndex = geometry.leanJointIndex;
-        headParams.neckJointIndex = geometry.neckJointIndex;
+        headParams.leanJointIndex = geometry.joints.leanJointIndex;
+        headParams.neckJointIndex = geometry.joints.neckJointIndex;
         headParams.isTalking = head->getTimeWithoutTalking() <= 1.5f;
 
         _rig->updateFromHeadParameters(headParams, deltaTime);
@@ -168,8 +168,8 @@ void SkeletonModel::updateRig(float deltaTime, glm::mat4 parentTransform) {
         eyeParams.eyeSaccade = head->getSaccade();
         eyeParams.modelRotation = getRotation();
         eyeParams.modelTranslation = getTranslation();
-        eyeParams.leftEyeJointIndex = geometry.leftEyeJointIndex;
-        eyeParams.rightEyeJointIndex = geometry.rightEyeJointIndex;
+        eyeParams.leftEyeJointIndex = geometry.joints.leftEyeJointIndex;
+        eyeParams.rightEyeJointIndex = geometry.joints.rightEyeJointIndex;
 
         _rig->updateFromEyeParameters(eyeParams);
 
@@ -188,7 +188,7 @@ void SkeletonModel::updateRig(float deltaTime, glm::mat4 parentTransform) {
 
         // If the head is not positioned, updateEyeJoints won't get the math right
         glm::quat headOrientation;
-        _rig->getJointRotation(geometry.headJointIndex, headOrientation);
+        _rig->getJointRotation(geometry.joints.headJointIndex, headOrientation);
         glm::vec3 eulers = safeEulerAngles(headOrientation);
         head->setBasePitch(glm::degrees(-eulers.x));
         head->setBaseYaw(glm::degrees(eulers.y));
@@ -200,8 +200,8 @@ void SkeletonModel::updateRig(float deltaTime, glm::mat4 parentTransform) {
         eyeParams.eyeSaccade = glm::vec3();
         eyeParams.modelRotation = getRotation();
         eyeParams.modelTranslation = getTranslation();
-        eyeParams.leftEyeJointIndex = geometry.leftEyeJointIndex;
-        eyeParams.rightEyeJointIndex = geometry.rightEyeJointIndex;
+        eyeParams.leftEyeJointIndex = geometry.joints.leftEyeJointIndex;
+        eyeParams.rightEyeJointIndex = geometry.joints.rightEyeJointIndex;
 
         _rig->updateFromEyeParameters(eyeParams);
      }
@@ -330,15 +330,15 @@ float SkeletonModel::getRightArmLength() const {
 }
 
 bool SkeletonModel::getHeadPosition(glm::vec3& headPosition) const {
-    return isActive() && getJointPositionInWorldFrame(getFBXGeometry().headJointIndex, headPosition);
+    return isActive() && getJointPositionInWorldFrame(getFBXGeometry().joints.headJointIndex, headPosition);
 }
 
 bool SkeletonModel::getNeckPosition(glm::vec3& neckPosition) const {
-    return isActive() && getJointPositionInWorldFrame(getFBXGeometry().neckJointIndex, neckPosition);
+    return isActive() && getJointPositionInWorldFrame(getFBXGeometry().joints.neckJointIndex, neckPosition);
 }
 
 bool SkeletonModel::getLocalNeckPosition(glm::vec3& neckPosition) const {
-    return isActive() && getJointPosition(getFBXGeometry().neckJointIndex, neckPosition);
+    return isActive() && getJointPosition(getFBXGeometry().joints.neckJointIndex, neckPosition);
 }
 
 bool SkeletonModel::getEyeModelPositions(glm::vec3& firstEyePosition, glm::vec3& secondEyePosition) const {
@@ -347,18 +347,18 @@ bool SkeletonModel::getEyeModelPositions(glm::vec3& firstEyePosition, glm::vec3&
     }
     const FBXGeometry& geometry = getFBXGeometry();
 
-    if (getJointPosition(geometry.leftEyeJointIndex, firstEyePosition) &&
-        getJointPosition(geometry.rightEyeJointIndex, secondEyePosition)) {
+    if (getJointPosition(geometry.joints.leftEyeJointIndex, firstEyePosition) &&
+        getJointPosition(geometry.joints.rightEyeJointIndex, secondEyePosition)) {
         return true;
     }
     // no eye joints; try to estimate based on head/neck joints
     glm::vec3 neckPosition, headPosition;
-    if (getJointPosition(geometry.neckJointIndex, neckPosition) &&
-        getJointPosition(geometry.headJointIndex, headPosition)) {
+    if (getJointPosition(geometry.joints.neckJointIndex, neckPosition) &&
+        getJointPosition(geometry.joints.headJointIndex, headPosition)) {
         const float EYE_PROPORTION = 0.6f;
         glm::vec3 baseEyePosition = glm::mix(neckPosition, headPosition, EYE_PROPORTION);
         glm::quat headRotation;
-        getJointRotation(geometry.headJointIndex, headRotation);
+        getJointRotation(geometry.joints.headJointIndex, headRotation);
         const float EYES_FORWARD = 0.25f;
         const float EYE_SEPARATION = 0.1f;
         float headHeight = glm::distance(neckPosition, headPosition);
@@ -393,14 +393,14 @@ void SkeletonModel::computeBoundingShape() {
     }
 
     const FBXGeometry& geometry = getFBXGeometry();
-    if (geometry.joints.isEmpty() || geometry.rootJointIndex == -1) {
+    if (geometry.joints.isEmpty() || geometry.joints.rootJointIndex == -1) {
         // rootJointIndex == -1 if the avatar model has no skeleton
         return;
     }
 
     float radius, height;
     glm::vec3 offset;
-    _rig->computeAvatarBoundingCapsule(geometry, radius, height, offset);
+    _rig->computeAvatarBoundingCapsule(geometry.joints, radius, height, offset);
     float invScale = 1.0f / _owningAvatar->getUniformScale();
     _boundingCapsuleRadius = invScale * radius;
     _boundingCapsuleHeight = invScale * height;
@@ -431,7 +431,7 @@ void SkeletonModel::renderBoundingCollisionShapes(gpu::Batch& batch, float scale
 }
 
 bool SkeletonModel::hasSkeleton() {
-    return isActive() ? getFBXGeometry().rootJointIndex != -1 : false;
+    return isActive() ? getFBXGeometry().joints.rootJointIndex != -1 : false;
 }
 
 void SkeletonModel::onInvalidate() {
