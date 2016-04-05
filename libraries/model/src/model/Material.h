@@ -308,6 +308,12 @@ public:
     };
 
     const UniformBufferView& getTexMapArrayBuffer() const { return _texMapArrayBuffer; }
+
+protected:
+    // Textures should not be held while cached; that is for the TextureCache.
+    // This allows NetworkMaterials to release their textures.
+    void releaseTextureMaps();
+
 private:
     mutable MaterialKey _key;
     mutable UniformBufferView _schemaBuffer;
