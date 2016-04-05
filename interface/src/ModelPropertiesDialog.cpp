@@ -114,7 +114,7 @@ QVariantHash ModelPropertiesDialog::getMapping() const {
         if (_modelType == FSTReader::ATTACHMENT_MODEL) {
             glm::vec3 pivot;
             if (_pivotAboutCenter->isChecked()) {
-                pivot = (_geometry.meshExtents.minimum + _geometry.meshExtents.maximum) * 0.5f;
+                pivot = (_geometry.meshes.meshExtents.minimum + _geometry.meshes.meshExtents.maximum) * 0.5f;
 
             } else if (_pivotJoint->currentIndex() != 0) {
                 pivot = extractTranslation(_geometry.joints.at(_pivotJoint->currentIndex() - 1).transform);
@@ -186,7 +186,7 @@ void ModelPropertiesDialog::reset() {
             }
             foreach (const QVariant& joint, _originalMapping.values(FREE_JOINT_FIELD)) {
                 QString jointName = joint.toString();
-                if (_geometry.jointIndices.contains(jointName)) {
+                if (_geometry.joints.indices.contains(jointName)) {
                     createNewFreeJoint(jointName);
                 }
             }
@@ -231,7 +231,7 @@ QComboBox* ModelPropertiesDialog::createJointBox(bool withNone) const {
         box->addItem("(none)");
     }
     foreach (const FBXJoint& joint, _geometry.joints) {
-        if (joint.isSkeletonJoint || !_geometry.hasSkeletonJoints) {
+        if (joint.isSkeletonJoint || !_geometry.joints.hasSkeletonJoints()) {
             box->addItem(joint.name);
         }
     }
@@ -247,7 +247,7 @@ QDoubleSpinBox* ModelPropertiesDialog::createTranslationBox() const {
 }
 
 void ModelPropertiesDialog::insertJointMapping(QVariantHash& joints, const QString& joint, const QString& name) const {
-    if (_geometry.jointIndices.contains(name)) {
+    if (_geometry.joints.indices.contains(name)) {
         joints.insert(joint, name);
     } else {
         joints.remove(joint);

@@ -229,7 +229,7 @@ EntityItemProperties EntityScriptingInterface::getEntityProperties(QUuid identit
                     const FBXGeometry* geometry = _entityTree->getGeometryForEntity(entity);
                     if (geometry) {
                         results.setSittingPoints(geometry->sittingPoints);
-                        Extents meshExtents = geometry->getUnscaledMeshExtents();
+                        Extents meshExtents = geometry->meshes.getUnscaledMeshExtents();
                         results.setNaturalDimensions(meshExtents.maximum - meshExtents.minimum);
                         results.calculateNaturalPosition(meshExtents.minimum, meshExtents.maximum);
                     }
