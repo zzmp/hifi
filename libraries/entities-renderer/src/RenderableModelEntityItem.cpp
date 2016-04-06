@@ -616,15 +616,15 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // should never fall in here when collision model not fully loaded
         // hence we assert that all geometries exist and are loaded
         assert(_model->isLoaded() && _model->isCollisionLoaded());
-        const FBXGeometry& renderGeometry = _model->getFBXGeometry();
-        const FBXGeometry& collisionGeometry = _model->getCollisionFBXGeometry();
+        const auto& renderGeometry = _model->getGeometry();
+        const auto& collisionGeometry = _model->getCollisionGeometry();
 
         _points.clear();
         unsigned int i = 0;
 
         // the way OBJ files get read, each section under a "g" line is its own meshPart.  We only expect
         // to find one actual "mesh" (with one or more meshParts in it), but we loop over the meshes, just in case.
-        foreach (const FBXMesh& mesh, collisionGeometry.meshes) {
+        foreach (const auto& mesh, collisionGeometry->getMeshes()) {
             // each meshPart is a convex hull
             foreach (const FBXMeshPart &meshPart, mesh.parts) {
                 QVector<glm::vec3> pointsInPart;
@@ -694,7 +694,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // to the visual model and apply them to the collision model (without regard for the
         // collision model's extents).
 
-        glm::vec3 scale = getDimensions() / renderGeometry.meshes.getUnscaledMeshExtents().size();
+        glm::vec3 scale = getDimensions() / renderGeometry->getMeshes().getUnscaledMeshExtents().size();
         // multiply each point by scale before handing the point-set off to the physics engine.
         // also determine the extents of the collision model.
         AABox box;
@@ -720,7 +720,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
 
 bool RenderableModelEntityItem::contains(const glm::vec3& point) const {
     if (EntityItem::contains(point) && _model && _model->isCollisionLoaded()) {
-        return _model->getCollisionFBXGeometry().meshes.convexHullContains(worldToEntity(point));
+        return _model->getCollisionGeometry()->getMeshes().convexHullContains(worldToEntity(point));
     }
 
     return false;
