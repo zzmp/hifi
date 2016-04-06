@@ -36,11 +36,10 @@ public:
     virtual void entityCreated(const EntityItem& newEntity, const SharedNodePointer& senderNode) = 0;
 };
 
-class EntityItemFBXService {
+class EntityItemGeometryService {
 public:
-    virtual const FBXGeometry* getGeometryForEntity(EntityItemPointer entityItem) = 0;
+    virtual bool getGeometryForEntity(EntityItemPointer entityItem, SittingPoints&, Extents&) = 0;
     virtual ModelPointer getModelForEntityItem(EntityItemPointer entityItem) = 0;
-    virtual const FBXGeometry* getCollisionGeometryForEntity(EntityItemPointer entityItem) = 0;
 };
 
 
@@ -172,13 +171,13 @@ public:
     int processEraseMessage(ReceivedMessage& message, const SharedNodePointer& sourceNode);
     int processEraseMessageDetails(const QByteArray& buffer, const SharedNodePointer& sourceNode);
 
-    EntityItemFBXService* getFBXService() const { return _fbxService; }
-    void setFBXService(EntityItemFBXService* service) { _fbxService = service; }
-    const FBXGeometry* getGeometryForEntity(EntityItemPointer entityItem) {
-        return _fbxService ? _fbxService->getGeometryForEntity(entityItem) : NULL;
+    EntityItemGeometryService* getGeometryService() const { return _geometryService; }
+    void setGeometryService(EntityItemGeometryService* service) { _geometryService = service; }
+    bool getGeometryForEntity(EntityItemPointer entityItem, SittingPoints& sittingPoints, Extents& extents) {
+        return _geometryService ? _geometryService->getGeometryForEntity(entityItem, sittingPoints, extents) : false;
     }
     ModelPointer getModelForEntityItem(EntityItemPointer entityItem) {
-        return _fbxService ? _fbxService->getModelForEntityItem(entityItem) : NULL;
+        return _geometryService ? _geometryService->getModelForEntityItem(entityItem) : NULL;
     }
 
     EntityTreeElementPointer getContainingElement(const EntityItemID& entityItemID)  /*const*/;
@@ -292,7 +291,7 @@ protected:
         _deletedEntityItemIDs << id;
     }
 
-    EntityItemFBXService* _fbxService;
+    EntityItemGeometryService* _geometryService;
 
     mutable QReadWriteLock _entityToElementLock;
     QHash<EntityItemID, EntityTreeElementPointer> _entityToElementMap;

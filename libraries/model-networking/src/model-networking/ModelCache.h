@@ -109,9 +109,11 @@ private:
 class Geometry {
 public:
     using Pointer = std::shared_ptr<Geometry>;
+    using SittingPoints = QVector<SittingPoint>;
 
     const NetworkJoints& getJoints() const { return *_joints; }
     const NetworkMeshes& getMeshes() const { return *_meshes; }
+    const SittingPoints& getSittingPoints() const { return *_sittingPoints; }
 
     std::shared_ptr<const NetworkMaterial> getShapeMaterial(int shapeID) const;
 
@@ -141,6 +143,7 @@ protected:
     std::shared_ptr<const NetworkJoints> _joints;
     std::shared_ptr<const NetworkMeshes> _meshes;
     std::shared_ptr<const NetworkShapes> _shapes;
+    std::shared_ptr<const SittingPoints> _sittingPoints;
 
     // Copied to each geometry, mutable throughout lifetime via setTextures
     NetworkMaterials _materials;

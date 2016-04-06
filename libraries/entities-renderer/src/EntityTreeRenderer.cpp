@@ -102,7 +102,7 @@ void EntityTreeRenderer::reloadEntityScripts() {
 void EntityTreeRenderer::init() {
     OctreeRenderer::init();
     EntityTreePointer entityTree = std::static_pointer_cast<EntityTree>(_tree);
-    entityTree->setFBXService(this);
+    entityTree->setGeometryService(this);
 
     if (_wantScripts) {
         _entitiesScriptEngine = new ScriptEngine(NO_SCRIPT, "Entities");
@@ -126,7 +126,7 @@ void EntityTreeRenderer::shutdown() {
 
 void EntityTreeRenderer::setTree(OctreePointer newTree) {
     OctreeRenderer::setTree(newTree);
-    std::static_pointer_cast<EntityTree>(_tree)->setFBXService(this);
+    std::static_pointer_cast<EntityTree>(_tree)->setGeometryService(this);
 }
 
 void EntityTreeRenderer::update() {
@@ -437,19 +437,19 @@ void EntityTreeRenderer::applyZonePropertiesToScene(std::shared_ptr<ZoneEntityIt
     }
 }
 
-const FBXGeometry* EntityTreeRenderer::getGeometryForEntity(EntityItemPointer entityItem) {
-    const FBXGeometry* result = NULL;
-
+bool EntityTreeRenderer::getGeometryForEntity(EntityItemPointer entityItem, SittingPoints& sittingPoints, Extents& extents) {
     if (entityItem->getType() == EntityTypes::Model) {
         std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
-                                                        std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
+            std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
         assert(modelEntityItem); // we need this!!!
         ModelPointer model = modelEntityItem->getModel(this);
         if (model && model->isLoaded()) {
-            result = &model->getFBXGeometry();
+            sittingPoints = model->getGeometry()->getSittingPoints();
+            extents = model->getGeometry()->getMeshes().getUnscaledMeshExtents();
+            return true;
         }
     }
-    return result;
+    return false;
 }
 
 ModelPointer EntityTreeRenderer::getModelForEntityItem(EntityItemPointer entityItem) {
@@ -458,22 +458,6 @@ ModelPointer EntityTreeRenderer::getModelForEntityItem(EntityItemPointer entityI
         std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
                                                         std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
         result = modelEntityItem->getModel(this);
-    }
-    return result;
-}
-
-const FBXGeometry* EntityTreeRenderer::getCollisionGeometryForEntity(EntityItemPointer entityItem) {
-    const FBXGeometry* result = NULL;
-    
-    if (entityItem->getType() == EntityTypes::Model) {
-        std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
-                                                        std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
-        if (modelEntityItem->hasCompoundShapeURL()) {
-            ModelPointer model = modelEntityItem->getModel(this);
-            if (model && model->isCollisionLoaded()) {
-                result = &model->getCollisionFBXGeometry();
-            }
-        }
     }
     return result;
 }
