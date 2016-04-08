@@ -626,7 +626,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // to find one actual "mesh" (with one or more meshParts in it), but we loop over the meshes, just in case.
         foreach (const auto& mesh, collisionGeometry->getMeshes()) {
             // each meshPart is a convex hull
-            foreach (const FBXMeshPart &meshPart, mesh.parts) {
+            foreach (const auto&meshPart, mesh.parts) {
                 QVector<glm::vec3> pointsInPart;
 
                 // run through all the triangles and (uniquely) add each point to the hull

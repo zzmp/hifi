@@ -381,7 +381,7 @@ ShapeKey ModelMeshPartPayload::getShapeKey() const {
         return ShapeKey::Builder::invalid();
     }
 
-    const FBXMesh& mesh = meshes.at(_meshIndex);
+    const auto& mesh = meshes.at(_meshIndex);
 
     // if our index is ever out of range for either meshes or networkMeshes, then skip it, and set our _meshGroupsKnown
     // to false to rebuild out mesh groups.
