@@ -216,7 +216,7 @@ bool Model::updateGeometry() {
     if (_rig->jointStatesEmpty() && getGeometry()->getJoints().size() > 0) {
         initJointStates();
 
-        foreach (const FBXMesh& mesh, getGeometry()->getMeshes()) {
+        foreach (const auto& mesh, getGeometry()->getMeshes()) {
             MeshState state;
             state.clusterMatrices.resize(mesh.clusters.size());
             state.cauterizedClusterMatrices.resize(mesh.clusters.size());
@@ -406,7 +406,7 @@ void Model::recalculateMeshBoxes(bool pickAgainstTriangles) {
         _calculatedMeshTriangles.resize(numberOfMeshes);
         _calculatedMeshPartBoxes.clear();
         for (int i = 0; i < numberOfMeshes; i++) {
-            const FBXMesh& mesh = meshes.at(i);
+            const auto& mesh = meshes.at(i);
             Extents scaledMeshExtents = calculateScaledOffsetExtents(mesh.meshExtents, _translation, _rotation);
 
             _calculatedMeshBoxes[i] = AABox(scaledMeshExtents);
@@ -414,7 +414,7 @@ void Model::recalculateMeshBoxes(bool pickAgainstTriangles) {
             if (pickAgainstTriangles) {
                 QVector<Triangle> thisMeshTriangles;
                 for (int j = 0; j < mesh.parts.size(); j++) {
-                    const FBXMeshPart& part = mesh.parts.at(j);
+                    const auto& part = mesh.parts.at(j);
 
                     bool atLeastOnePointInBounds = false;
                     AABox thisPartBounds;
@@ -511,7 +511,7 @@ void Model::recalculateMeshBoxes(bool pickAgainstTriangles) {
 void Model::renderSetup(RenderArgs* args) {
     // set up dilated textures on first render after load/simulate
     if (_dilatedTextures.isEmpty()) {
-        foreach (const FBXMesh& mesh, getGeometry()->getMeshes()) {
+        foreach (const auto& mesh, getGeometry()->getMeshes()) {
             QVector<QSharedPointer<Texture> > dilated;
             dilated.resize(mesh.parts.size());
             _dilatedTextures.append(dilated);
@@ -876,7 +876,7 @@ void Blender::run() {
     auto geometry = _geometry.lock();
     if (_model && geometry) {
         int offset = 0;
-        foreach (const FBXMesh& mesh, geometry->getGeometry()->getMeshes()) {
+        foreach (const auto& mesh, geometry->getGeometry()->getMeshes()) {
             if (mesh.blendshapes.isEmpty()) {
                 continue;
             }
@@ -893,7 +893,7 @@ void Blender::run() {
                     continue;
                 }
                 float normalCoefficient = vertexCoefficient * NORMAL_COEFFICIENT_SCALE;
-                const FBXBlendshape& blendshape = mesh.blendshapes.at(i);
+                const auto& blendshape = mesh.blendshapes.at(i);
                 for (int j = 0; j < blendshape.indices.size(); j++) {
                     int index = blendshape.indices.at(j);
                     meshVertices[index] += blendshape.vertices.at(j) * vertexCoefficient;
@@ -1048,10 +1048,10 @@ void Model::updateClusterMatrices(glm::vec3 modelPosition, glm::quat modelOrient
     glm::mat4 modelToWorld = glm::mat4_cast(modelOrientation);
     for (int i = 0; i < _meshStates.size(); i++) {
         MeshState& state = _meshStates[i];
-        const FBXMesh& mesh = geometry->getMeshes().at(i);
+        const auto& mesh = geometry->getMeshes().at(i);
 
         for (int j = 0; j < mesh.clusters.size(); j++) {
-            const FBXCluster& cluster = mesh.clusters.at(j);
+            const auto& cluster = mesh.clusters.at(j);
             auto jointMatrix = _rig->getJointTransform(cluster.jointIndex);
             state.clusterMatrices[j] = modelToWorld * jointMatrix * cluster.inverseBindMatrix;
 
@@ -1095,18 +1095,18 @@ void Model::updateClusterMatrices(glm::vec3 modelPosition, glm::quat modelOrient
 }
 
 void Model::inverseKinematics(int endIndex, glm::vec3 targetPosition, const glm::quat& targetRotation, float priority) {
-    const QVector<int>& freeLineage = getGeometry()->getJoints().at(endIndex).freeLineage;
+    const auto& freeLineage = getGeometry()->getJoints().at(endIndex).freeLineage;
     glm::mat4 parentTransform = glm::scale(_scale) * glm::translate(_offset);
     _rig->inverseKinematics(endIndex, targetPosition, targetRotation, priority, freeLineage, parentTransform);
 }
 
 bool Model::restoreJointPosition(int jointIndex, float fraction, float priority) {
-    const QVector<int>& freeLineage = getGeometry()->getJoints().at(jointIndex).freeLineage;
+    const auto& freeLineage = getGeometry()->getJoints().at(jointIndex).freeLineage;
     return _rig->restoreJointPosition(jointIndex, fraction, priority, freeLineage);
 }
 
 float Model::getLimbLength(int jointIndex) const {
-    const QVector<int>& freeLineage = getGeometry()->getJoints().at(jointIndex).freeLineage;
+    const auto& freeLineage = getGeometry()->getJoints().at(jointIndex).freeLineage;
     return _rig->getLimbLength(jointIndex, freeLineage, _scale, getGeometry()->getJoints());
 }
 
@@ -1132,7 +1132,7 @@ void Model::setBlendedVertices(int blendNumber, const std::weak_ptr<NetworkGeome
     const auto& meshes = geometryRef->getGeometry()->getMeshes();
     int index = 0;
     for (int i = 0; i < meshes.size(); i++) {
-        const FBXMesh& mesh = meshes.at(i);
+        const auto& mesh = meshes.at(i);
         if (mesh.blendshapes.isEmpty()) {
             continue;
         }
