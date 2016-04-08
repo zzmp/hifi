@@ -1300,7 +1300,7 @@ void Rig::computeAvatarBoundingCapsule(
     // from the head to the hips when computing the rest of the bounding capsule.
     int index = indexOfJoint("Head");
     while (index != -1) {
-        const FBXJointShapeInfo& shapeInfo = joints.at(index).shapeInfo;
+        const auto& shapeInfo = joints.at(index).shapeInfo;
         AnimPose pose = finalPoses[index];
         if (shapeInfo.points.size() > 0) {
             for (int j = 0; j < shapeInfo.points.size(); ++j) {

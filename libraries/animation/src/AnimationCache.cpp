@@ -82,7 +82,7 @@ void AnimationReader::run() {
 }
 
 bool Animation::isLoaded() const {
-    return _loaded && _geometry;
+    return _loaded && _joints && _animationFrames;
 }
 
 QStringList Animation::getJointNames() const {
@@ -93,24 +93,21 @@ QStringList Animation::getJointNames() const {
         return result;
     }
     QStringList names;
-    foreach (const FBXJoint& joint, _geometry->joints) {
+    names.reserve(_joints->size());
+    foreach (const auto& joint, *_joints) {
         names.append(joint.name);
     }
     return names;
 }
 
-QVector<FBXAnimationFrame> Animation::getFrames() const {
+FBXAnimationFrames Animation::getFrames() const {
     if (QThread::currentThread() != thread()) {
         QVector<FBXAnimationFrame> result;
         QMetaObject::invokeMethod(const_cast<Animation*>(this), "getFrames", Qt::BlockingQueuedConnection,
             Q_RETURN_ARG(QVector<FBXAnimationFrame>, result));
         return result;
     }
-    return _geometry->animationFrames;
-}
-
-const QVector<FBXAnimationFrame>& Animation::getFramesReference() const {
-    return _geometry->animationFrames;
+    return *_animationFrames;
 }
 
 void Animation::downloadFinished(const QByteArray& data) {
@@ -125,7 +122,10 @@ void Animation::animationParseSuccess(FBXGeometry* geometry) {
 
     qCDebug(animation) << "Animation parse success" << _url.toDisplayString();
 
-    _geometry.reset(geometry);
+    std::unique_ptr<FBXGeometry> source(geometry);
+    _joints.reset(new FBXJoints(std::move(source->joints)));
+    _animationFrames.reset(new FBXAnimationFrames(std::move(source->animationFrames)));
+
     finishedLoading(true);
 }
 
