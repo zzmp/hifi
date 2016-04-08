@@ -419,7 +419,7 @@ FBXGeometry* OBJReader::readOBJ(QByteArray& model, const QVariantHash& mapping, 
     bool needsMaterialLibrary = false;
 
     _url = url;
-    geometry.meshExtents.reset();
+    geometry.meshes.meshExtents.reset();
     geometry.meshes.append(FBXMesh());
 
     try {
@@ -440,7 +440,7 @@ FBXGeometry* OBJReader::readOBJ(QByteArray& model, const QVariantHash& mapping, 
         geometry.joints[0].name = "OBJ";
         geometry.joints[0].isSkeletonJoint = true;
 
-        geometry.jointIndices["x"] = 1;
+        geometry.joints.indices["x"] = 1;
 
         FBXCluster cluster;
         cluster.jointIndex = 0;
@@ -521,7 +521,7 @@ FBXGeometry* OBJReader::readOBJ(QByteArray& model, const QVariantHash& mapping, 
         mesh.meshExtents.reset();
         foreach (const glm::vec3& vertex, mesh.vertices) {
             mesh.meshExtents.addPoint(vertex);
-            geometry.meshExtents.addPoint(vertex);
+            geometry.meshes.meshExtents.addPoint(vertex);
         }
 
         FBXReader::buildModelMesh(mesh, url.toString());
@@ -617,8 +617,8 @@ FBXGeometry* OBJReader::readOBJ(QByteArray& model, const QVariantHash& mapping, 
 
 void fbxDebugDump(const FBXGeometry& fbxgeo) {
     qCDebug(modelformat) << "---------------- fbxGeometry ----------------";
-    qCDebug(modelformat) << "  hasSkeletonJoints =" << fbxgeo.hasSkeletonJoints;
-    qCDebug(modelformat) << "  offset =" << fbxgeo.offset;
+    qCDebug(modelformat) << "  hasSkeletonJoints =" << fbxgeo.joints.hasSkeletonJoints();
+    qCDebug(modelformat) << "  offset =" << fbxgeo.joints.offset;
     qCDebug(modelformat) << "  meshes.count() =" << fbxgeo.meshes.count();
     foreach (FBXMesh mesh, fbxgeo.meshes) {
         qCDebug(modelformat) << "    vertices.count() =" << mesh.vertices.count();
@@ -660,7 +660,7 @@ void fbxDebugDump(const FBXGeometry& fbxgeo) {
         }
     }
 
-    qCDebug(modelformat) << "  jointIndices =" << fbxgeo.jointIndices;
+    qCDebug(modelformat) << "  jointIndices =" << fbxgeo.joints.indices;
     qCDebug(modelformat) << "  joints.count() =" << fbxgeo.joints.count();
 
     foreach (FBXJoint joint, fbxgeo.joints) {

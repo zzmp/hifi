@@ -51,7 +51,7 @@ _desiredProperties(desiredProperties)
 {
 }
 
-void EntityItemProperties::setSittingPoints(const QVector<SittingPoint>& sittingPoints) {
+void EntityItemProperties::setSittingPoints(const SittingPoints& sittingPoints) {
     _sittingPoints.clear();
     foreach (SittingPoint sitPoint, sittingPoints) {
         _sittingPoints.append(sitPoint);

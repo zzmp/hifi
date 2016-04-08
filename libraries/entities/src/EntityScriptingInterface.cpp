@@ -226,12 +226,13 @@ EntityItemProperties EntityScriptingInterface::getEntityProperties(QUuid identit
                 //       for now we've included the old sitting points model behavior for entity types that are models
                 //        we've also added this hack for setting natural dimensions of models
                 if (entity->getType() == EntityTypes::Model) {
-                    const FBXGeometry* geometry = _entityTree->getGeometryForEntity(entity);
-                    if (geometry) {
-                        results.setSittingPoints(geometry->sittingPoints);
-                        Extents meshExtents = geometry->getUnscaledMeshExtents();
-                        results.setNaturalDimensions(meshExtents.maximum - meshExtents.minimum);
-                        results.calculateNaturalPosition(meshExtents.minimum, meshExtents.maximum);
+                    SittingPoints sittingPoints;
+                    Extents extents;
+                    bool success = _entityTree->getGeometryForEntity(entity, sittingPoints, extents);
+                    if (success) {
+                        results.setSittingPoints(sittingPoints);
+                        results.setNaturalDimensions(extents.maximum - extents.minimum);
+                        results.calculateNaturalPosition(extents.minimum, extents.maximum);
                     }
                 }
 
@@ -475,13 +476,20 @@ QVector<QUuid> EntityScriptingInterface::findEntitiesInBox(const glm::vec3& corn
     return result;
 }
 
-RayToEntityIntersectionResult EntityScriptingInterface::findRayIntersection(const PickRay& ray, bool precisionPicking, const QScriptValue& entityIdsToInclude, const QScriptValue& entityIdsToDiscard) {
+RayToEntityIntersectionResult EntityScriptingInterface::findRayIntersection(const PickRay& ray, bool precisionPicking, 
+                const QScriptValue& entityIdsToInclude, const QScriptValue& entityIdsToDiscard) {
+
     QVector<EntityItemID> entitiesToInclude = qVectorEntityItemIDFromScriptValue(entityIdsToInclude);
     QVector<EntityItemID> entitiesToDiscard = qVectorEntityItemIDFromScriptValue(entityIdsToDiscard);
-    return findRayIntersectionWorker(ray, Octree::TryLock, precisionPicking, entitiesToInclude, entitiesToDiscard);
+    return findRayIntersectionWorker(ray, Octree::Lock, precisionPicking, entitiesToInclude, entitiesToDiscard);
 }
 
-RayToEntityIntersectionResult EntityScriptingInterface::findRayIntersectionBlocking(const PickRay& ray, bool precisionPicking, const QScriptValue& entityIdsToInclude, const QScriptValue& entityIdsToDiscard) {
+// FIXME - we should remove this API and encourage all users to use findRayIntersection() instead. We've changed
+//         findRayIntersection() to be blocking because it never makes sense for a script to get back a non-answer
+RayToEntityIntersectionResult EntityScriptingInterface::findRayIntersectionBlocking(const PickRay& ray, bool precisionPicking, 
+                const QScriptValue& entityIdsToInclude, const QScriptValue& entityIdsToDiscard) {
+
+    qWarning() << "Entities.findRayIntersectionBlocking() is obsolete, use Entities.findRayIntersection() instead.";
     const QVector<EntityItemID>& entitiesToInclude = qVectorEntityItemIDFromScriptValue(entityIdsToInclude);
     const QVector<EntityItemID> entitiesToDiscard = qVectorEntityItemIDFromScriptValue(entityIdsToDiscard);
     return findRayIntersectionWorker(ray, Octree::Lock, precisionPicking, entitiesToInclude, entitiesToDiscard);

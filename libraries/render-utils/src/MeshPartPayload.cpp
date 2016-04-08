@@ -321,28 +321,25 @@ ModelMeshPartPayload::ModelMeshPartPayload(Model* model, int _meshIndex, int par
     _shapeID(shapeIndex) {
 
     assert(_model && _model->isLoaded());
-    auto& modelMesh = _model->getGeometry()->getGeometry()->getMeshes().at(_meshIndex);
-    updateMeshPart(modelMesh, partIndex);
+    const auto& mesh = _model->getGeometry()->getMeshes().at(_meshIndex);
+    updateMeshPart(mesh._mesh, partIndex);
 
     updateTransform(transform, offsetTransform);
     initCache();
 }
 
 void ModelMeshPartPayload::initCache() {
-    assert(_model->isLoaded());
-
     if (_drawMesh) {
         auto vertexFormat = _drawMesh->getVertexFormat();
         _hasColorAttrib = vertexFormat->hasAttribute(gpu::Stream::COLOR);
         _isSkinned = vertexFormat->hasAttribute(gpu::Stream::SKIN_CLUSTER_WEIGHT) && vertexFormat->hasAttribute(gpu::Stream::SKIN_CLUSTER_INDEX);
 
-        const FBXGeometry& geometry = _model->getFBXGeometry();
-        const FBXMesh& mesh = geometry.meshes.at(_meshIndex);
+        const auto& mesh = _model->getGeometry()->getMeshes().at(_meshIndex);
 
         _isBlendShaped = !mesh.blendshapes.isEmpty();
     }
 
-    auto networkMaterial = _model->getGeometry()->getGeometry()->getShapeMaterial(_shapeID);
+    auto networkMaterial = _model->getGeometry()->getShapeMaterial(_shapeID);
     if (networkMaterial) {
         _drawMaterial = networkMaterial;
     };
@@ -393,20 +390,18 @@ ItemKey ModelMeshPartPayload::getKey() const {
 }
 
 ShapeKey ModelMeshPartPayload::getShapeKey() const {
-    assert(_model->isLoaded());
-    const FBXGeometry& geometry = _model->getFBXGeometry();
-    const auto& networkMeshes = _model->getGeometry()->getGeometry()->getMeshes();
+    const auto& meshes = _model->getGeometry()->getMeshes();
 
     // guard against partially loaded meshes
-    if (_meshIndex >= (int)networkMeshes.size() || _meshIndex >= (int)geometry.meshes.size() || _meshIndex >= (int)_model->_meshStates.size()) {
+    if (_meshIndex >= (int)meshes.size() || _meshIndex >= (int)_model->_meshStates.size()) {
         return ShapeKey::Builder::invalid();
     }
 
-    const FBXMesh& mesh = geometry.meshes.at(_meshIndex);
+    const auto& mesh = meshes.at(_meshIndex);
 
     // if our index is ever out of range for either meshes or networkMeshes, then skip it, and set our _meshGroupsKnown
     // to false to rebuild out mesh groups.
-    if (_meshIndex < 0 || _meshIndex >= (int)networkMeshes.size() || _meshIndex > geometry.meshes.size()) {
+    if (_meshIndex < 0 || _meshIndex >= (int)meshes.size()) {
         _model->_meshGroupsKnown = false; // regenerate these lists next time around.
         _model->_readyWhenAdded = false; // in case any of our users are using scenes
         _model->invalidCalculatedMeshBoxes(); // if we have to reload, we need to assume our mesh boxes are all invalid

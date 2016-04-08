@@ -97,7 +97,7 @@ public:
                     bool showCollisionHull = false);
     void removeFromScene(std::shared_ptr<render::Scene> scene, render::PendingChanges& pendingChanges);
     void renderSetup(RenderArgs* args);
-    bool isRenderable() const { return !_meshStates.isEmpty() || (isActive() && getGeometry()->getGeometry()->getMeshes().empty()); }
+    bool isRenderable() const { return !_meshStates.isEmpty() || (isActive() && !getGeometry()->getMeshes().isEmpty()); }
 
     bool isVisible() const { return _isVisible; }
 
@@ -128,18 +128,12 @@ public:
     virtual void updateClusterMatrices(glm::vec3 modelPosition, glm::quat modelOrientation);
 
     /// Returns a reference to the shared geometry.
-    const NetworkGeometry::Pointer& getGeometry() const { return _geometry; }
+    const Geometry::Pointer& getGeometry() const { assert(isLoaded()); return _geometry->getGeometry(); }
     /// Returns a reference to the shared collision geometry.
-    const NetworkGeometry::Pointer& getCollisionGeometry() const { return _collisionGeometry; }
+    const Geometry::Pointer& getCollisionGeometry() const { assert(isCollisionLoaded()); return _collisionGeometry->getGeometry(); }
 
     const QVariantMap getTextures() const { assert(isLoaded()); return _geometry->getGeometry()->getTextures(); }
     void setTextures(const QVariantMap& textures);
-
-    /// Provided as a convenience, will crash if !isLoaded()
-    // And so that getGeometry() isn't chained everywhere
-    const FBXGeometry& getFBXGeometry() const { assert(isLoaded()); return getGeometry()->getGeometry()->getGeometry(); }
-    /// Provided as a convenience, will crash if !isCollisionLoaded()
-    const FBXGeometry& getCollisionFBXGeometry() const { assert(isCollisionLoaded()); return getCollisionGeometry()->getGeometry()->getGeometry(); }
 
     // Set the model to use for collisions.
     // Should only be called from the model's rendering thread to avoid access violations of changed geometry.

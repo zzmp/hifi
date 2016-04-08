@@ -16,17 +16,7 @@
 
 #include "AnimationLogging.h"
 
-AnimSkeleton::AnimSkeleton(const FBXGeometry& fbxGeometry) {
-    // convert to std::vector of joints
-    std::vector<FBXJoint> joints;
-    joints.reserve(fbxGeometry.joints.size());
-    for (auto& joint : fbxGeometry.joints) {
-        joints.push_back(joint);
-    }
-    buildSkeletonFromJoints(joints);
-}
-
-AnimSkeleton::AnimSkeleton(const std::vector<FBXJoint>& joints) {
+AnimSkeleton::AnimSkeleton(const FBXJoints& joints) {
     buildSkeletonFromJoints(joints);
 }
 
@@ -120,7 +110,7 @@ void AnimSkeleton::mirrorAbsolutePoses(AnimPoseVec& poses) const {
     }
 }
 
-void AnimSkeleton::buildSkeletonFromJoints(const std::vector<FBXJoint>& joints) {
+void AnimSkeleton::buildSkeletonFromJoints(const FBXJoints& joints) {
     _joints = joints;
 
     // build a cache of bind poses

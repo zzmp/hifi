@@ -158,12 +158,12 @@ void Rig::destroyAnimGraph() {
     _internalPoseSet._overrideFlags.clear();
 }
 
-void Rig::initJointStates(const FBXGeometry& geometry, const glm::mat4& modelOffset) {
+void Rig::initJointStates(const FBXJoints& joints, const glm::mat4& modelOffset) {
 
-    _geometryOffset = AnimPose(geometry.offset);
+    _geometryOffset = AnimPose(joints.offset);
     setModelOffset(modelOffset);
 
-    _animSkeleton = std::make_shared<AnimSkeleton>(geometry);
+    _animSkeleton = std::make_shared<AnimSkeleton>(joints);
 
     _internalPoseSet._relativePoses.clear();
     _internalPoseSet._relativePoses = _animSkeleton->getRelativeDefaultPoses();
@@ -178,18 +178,18 @@ void Rig::initJointStates(const FBXGeometry& geometry, const glm::mat4& modelOff
 
     buildAbsoluteRigPoses(_animSkeleton->getRelativeDefaultPoses(), _absoluteDefaultPoses);
 
-    _rootJointIndex = geometry.rootJointIndex;
-    _leftHandJointIndex = geometry.leftHandJointIndex;
-    _leftElbowJointIndex = _leftHandJointIndex >= 0 ? geometry.joints.at(_leftHandJointIndex).parentIndex : -1;
-    _leftShoulderJointIndex = _leftElbowJointIndex >= 0 ? geometry.joints.at(_leftElbowJointIndex).parentIndex : -1;
-    _rightHandJointIndex = geometry.rightHandJointIndex;
-    _rightElbowJointIndex = _rightHandJointIndex >= 0 ? geometry.joints.at(_rightHandJointIndex).parentIndex : -1;
-    _rightShoulderJointIndex = _rightElbowJointIndex >= 0 ? geometry.joints.at(_rightElbowJointIndex).parentIndex : -1;
+    _rootJointIndex = joints.rootJointIndex;
+    _leftHandJointIndex = joints.leftHandJointIndex;
+    _leftElbowJointIndex = _leftHandJointIndex >= 0 ? joints.at(_leftHandJointIndex).parentIndex : -1;
+    _leftShoulderJointIndex = _leftElbowJointIndex >= 0 ? joints.at(_leftElbowJointIndex).parentIndex : -1;
+    _rightHandJointIndex = joints.rightHandJointIndex;
+    _rightElbowJointIndex = _rightHandJointIndex >= 0 ? joints.at(_rightHandJointIndex).parentIndex : -1;
+    _rightShoulderJointIndex = _rightElbowJointIndex >= 0 ? joints.at(_rightElbowJointIndex).parentIndex : -1;
 }
 
-void Rig::reset(const FBXGeometry& geometry) {
-    _geometryOffset = AnimPose(geometry.offset);
-    _animSkeleton = std::make_shared<AnimSkeleton>(geometry);
+void Rig::reset(const FBXJoints& joints) {
+    _geometryOffset = AnimPose(joints.offset);
+    _animSkeleton = std::make_shared<AnimSkeleton>(joints);
 
     _internalPoseSet._relativePoses.clear();
     _internalPoseSet._relativePoses = _animSkeleton->getRelativeDefaultPoses();
@@ -204,13 +204,13 @@ void Rig::reset(const FBXGeometry& geometry) {
 
     buildAbsoluteRigPoses(_animSkeleton->getRelativeDefaultPoses(), _absoluteDefaultPoses);
 
-    _rootJointIndex = geometry.rootJointIndex;
-    _leftHandJointIndex = geometry.leftHandJointIndex;
-    _leftElbowJointIndex = _leftHandJointIndex >= 0 ? geometry.joints.at(_leftHandJointIndex).parentIndex : -1;
-    _leftShoulderJointIndex = _leftElbowJointIndex >= 0 ? geometry.joints.at(_leftElbowJointIndex).parentIndex : -1;
-    _rightHandJointIndex = geometry.rightHandJointIndex;
-    _rightElbowJointIndex = _rightHandJointIndex >= 0 ? geometry.joints.at(_rightHandJointIndex).parentIndex : -1;
-    _rightShoulderJointIndex = _rightElbowJointIndex >= 0 ? geometry.joints.at(_rightElbowJointIndex).parentIndex : -1;
+    _rootJointIndex = joints.rootJointIndex;
+    _leftHandJointIndex = joints.leftHandJointIndex;
+    _leftElbowJointIndex = _leftHandJointIndex >= 0 ? joints.at(_leftHandJointIndex).parentIndex : -1;
+    _leftShoulderJointIndex = _leftElbowJointIndex >= 0 ? joints.at(_leftElbowJointIndex).parentIndex : -1;
+    _rightHandJointIndex = joints.rightHandJointIndex;
+    _rightElbowJointIndex = _rightHandJointIndex >= 0 ? joints.at(_rightHandJointIndex).parentIndex : -1;
+    _rightShoulderJointIndex = _rightElbowJointIndex >= 0 ? joints.at(_rightElbowJointIndex).parentIndex : -1;
 
     if (!_animGraphURL.isEmpty()) {
         initAnimGraph(_animGraphURL);
@@ -896,7 +896,7 @@ bool Rig::restoreJointPosition(int jointIndex, float fraction, float priority, c
 }
 
 float Rig::getLimbLength(int jointIndex, const QVector<int>& freeLineage,
-                         const glm::vec3 scale, const QVector<FBXJoint>& fbxJoints) const {
+                         const glm::vec3 scale, const FBXJoints& fbxJoints) const {
     ASSERT(false);
     return 1.0f;
 }
@@ -1216,7 +1216,7 @@ void Rig::copyJointsFromJointData(const QVector<JointData>& jointDataVec) {
 }
 
 void Rig::computeAvatarBoundingCapsule(
-        const FBXGeometry& geometry,
+        const FBXJoints& joints,
         float& radiusOut,
         float& heightOut,
         glm::vec3& localOffsetOut) const {
@@ -1300,7 +1300,7 @@ void Rig::computeAvatarBoundingCapsule(
     // from the head to the hips when computing the rest of the bounding capsule.
     int index = indexOfJoint("Head");
     while (index != -1) {
-        const FBXJointShapeInfo& shapeInfo = geometry.joints.at(index).shapeInfo;
+        const auto& shapeInfo = joints.at(index).shapeInfo;
         AnimPose pose = finalPoses[index];
         if (shapeInfo.points.size() > 0) {
             for (int j = 0; j < shapeInfo.points.size(); ++j) {
@@ -1317,7 +1317,7 @@ void Rig::computeAvatarBoundingCapsule(
     radiusOut = 0.5f * sqrtf(0.5f * (diagonal.x * diagonal.x + diagonal.z * diagonal.z));
     heightOut = diagonal.y - 2.0f * radiusOut;
 
-    glm::vec3 rootPosition = finalPoses[geometry.rootJointIndex].trans;
+    glm::vec3 rootPosition = finalPoses[joints.rootJointIndex].trans;
     glm::vec3 rigCenter = (geometryToRig * (0.5f * (totalExtents.maximum + totalExtents.minimum)));
     localOffsetOut = rigCenter - (geometryToRig * rootPosition);
 }

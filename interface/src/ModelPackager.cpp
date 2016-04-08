@@ -244,15 +244,15 @@ void ModelPackager::populateBasicMapping(QVariantHash& mapping, QString filename
     }
     QVariantHash joints = mapping.value(JOINT_FIELD).toHash();
     if (!joints.contains("jointEyeLeft")) {
-        joints.insert("jointEyeLeft", geometry.jointIndices.contains("jointEyeLeft") ? "jointEyeLeft" :
-                      (geometry.jointIndices.contains("EyeLeft") ? "EyeLeft" : "LeftEye"));
+        joints.insert("jointEyeLeft", geometry.joints.indices.contains("jointEyeLeft") ? "jointEyeLeft" :
+                      (geometry.joints.indices.contains("EyeLeft") ? "EyeLeft" : "LeftEye"));
     }
     if (!joints.contains("jointEyeRight")) {
-        joints.insert("jointEyeRight", geometry.jointIndices.contains("jointEyeRight") ? "jointEyeRight" :
-                      geometry.jointIndices.contains("EyeRight") ? "EyeRight" : "RightEye");
+        joints.insert("jointEyeRight", geometry.joints.indices.contains("jointEyeRight") ? "jointEyeRight" :
+                      geometry.joints.indices.contains("EyeRight") ? "EyeRight" : "RightEye");
     }
     if (!joints.contains("jointNeck")) {
-        joints.insert("jointNeck", geometry.jointIndices.contains("jointNeck") ? "jointNeck" : "Neck");
+        joints.insert("jointNeck", geometry.joints.indices.contains("jointNeck") ? "jointNeck" : "Neck");
     }
     
     if (isBodyType) {
@@ -272,7 +272,7 @@ void ModelPackager::populateBasicMapping(QVariantHash& mapping, QString filename
     
     if (!joints.contains("jointHead")) {
         const char* topName = likelyMixamoFile ? "HeadTop_End" : "HeadEnd";
-        joints.insert("jointHead", geometry.jointIndices.contains(topName) ? topName : "Head");
+        joints.insert("jointHead", geometry.joints.indices.contains(topName) ? topName : "Head");
     }
 
     mapping.insert(JOINT_FIELD, joints);
