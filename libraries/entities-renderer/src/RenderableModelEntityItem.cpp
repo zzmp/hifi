@@ -277,8 +277,8 @@ bool RenderableModelEntityItem::getAnimationFrame() {
 
     if (_animation && _animation->isLoaded()) {
 
-        const QVector<FBXAnimationFrame>&  frames = _animation->getFramesReference(); // NOTE: getFrames() is too heavy
-        auto& fbxJoints = _animation->getGeometry().joints;
+        const auto&  frames = _animation->getFramesReference(); // NOTE: getFrames() is too heavy
+        const auto& fbxJoints = _animation->getJoints();
 
         int frameCount = frames.size();
         if (frameCount > 0) {
