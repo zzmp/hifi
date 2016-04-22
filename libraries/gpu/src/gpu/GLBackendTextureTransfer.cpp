@@ -50,6 +50,7 @@ void GLTextureTransferHelper::transferTexture(const gpu::TexturePointer& texture
 #ifdef THREADED_TEXTURE_TRANSFER
     GLBackend::GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texture);
     TextureTransferPackage package{ texture, 0};
+    object->_contentStamp = texture->getDataStamp();
     object->setSyncState(GLBackend::GLTexture::Pending);
     queueItem(package);
 #else
