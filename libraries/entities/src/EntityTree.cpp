@@ -29,7 +29,7 @@ static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC *
 
 EntityTree::EntityTree(bool shouldReaverage) :
     Octree(shouldReaverage),
-    _fbxService(NULL),
+    _geometryService(NULL),
     _simulation(NULL)
 {
     resetClientEditStats();

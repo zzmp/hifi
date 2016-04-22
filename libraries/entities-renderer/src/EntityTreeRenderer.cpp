@@ -456,19 +456,20 @@ void EntityTreeRenderer::applyZonePropertiesToScene(std::shared_ptr<ZoneEntityIt
     }
 }
 
-const FBXGeometry* EntityTreeRenderer::getGeometryForEntity(EntityItemPointer entityItem) {
-    const FBXGeometry* result = NULL;
-
+bool EntityTreeRenderer::getGeometryForEntity(EntityItemPointer entityItem, SittingPoints& sittingPoints, Extents& extents) {
     if (entityItem->getType() == EntityTypes::Model) {
         std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
-                                                        std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
+            std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
         assert(modelEntityItem); // we need this!!!
         ModelPointer model = modelEntityItem->getModel(this);
         if (model && model->isLoaded()) {
-            result = &model->getFBXGeometry();
+            const auto& geometry = model->getGeometry();
+            sittingPoints = geometry->getSittingPoints();
+            extents = geometry->getMeshes().getUnscaledMeshExtents();
+            return true;
         }
     }
-    return result;
+    return false;
 }
 
 ModelPointer EntityTreeRenderer::getModelForEntityItem(EntityItemPointer entityItem) {
@@ -477,22 +478,6 @@ ModelPointer EntityTreeRenderer::getModelForEntityItem(EntityItemPointer entityI
         std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
                                                         std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
         result = modelEntityItem->getModel(this);
-    }
-    return result;
-}
-
-const FBXGeometry* EntityTreeRenderer::getCollisionGeometryForEntity(EntityItemPointer entityItem) {
-    const FBXGeometry* result = NULL;
-    
-    if (entityItem->getType() == EntityTypes::Model) {
-        std::shared_ptr<RenderableModelEntityItem> modelEntityItem =
-                                                        std::dynamic_pointer_cast<RenderableModelEntityItem>(entityItem);
-        if (modelEntityItem->hasCompoundShapeURL()) {
-            ModelPointer model = modelEntityItem->getModel(this);
-            if (model && model->isCollisionLoaded()) {
-                result = &model->getCollisionFBXGeometry();
-            }
-        }
     }
     return result;
 }

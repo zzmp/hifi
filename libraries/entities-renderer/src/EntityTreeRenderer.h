@@ -34,7 +34,7 @@ using ModelPointer = std::shared_ptr<Model>;
 using ModelWeakPointer = std::weak_ptr<Model>;
 
 // Generic client side Octree renderer class.
-class EntityTreeRenderer : public OctreeRenderer, public EntityItemFBXService, public Dependency {
+class EntityTreeRenderer : public OctreeRenderer, public EntityItemGeometryService, public Dependency {
     Q_OBJECT
 public:
     EntityTreeRenderer(bool wantScripts, AbstractViewStateInterface* viewState,
@@ -55,9 +55,8 @@ public:
 
     virtual void init();
 
-    virtual const FBXGeometry* getGeometryForEntity(EntityItemPointer entityItem);
+    virtual bool getGeometryForEntity(EntityItemPointer entityItem, SittingPoints& sittingPoints, Extents& extents);
     virtual ModelPointer getModelForEntityItem(EntityItemPointer entityItem);
-    virtual const FBXGeometry* getCollisionGeometryForEntity(EntityItemPointer entityItem);
     
     /// clears the tree
     virtual void clear();
