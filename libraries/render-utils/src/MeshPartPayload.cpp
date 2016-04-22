@@ -144,17 +144,27 @@ void MeshPartPayload::bindMaterial(gpu::Batch& batch, const ShapePipeline::Locat
     auto textureMaps = _drawMaterial->getTextureMaps();
     glm::mat4 texcoordTransform[2];
 
+    using Channel = model::MaterialKey::MapChannel;
+    using Slot = ShapePipeline::Slot;
+
+    auto setTexture = [&](model::MaterialKey::MapChannel channel, gpu::uint32 slot,
+        const gpu::TexturePointer& loadingTexture) {
+        auto map = textureMaps[channel];
+        if (map && map->isDefined()) {
+            batch.setResourceTexture(slot, map->getTextureView());
+            return map;
+        } else {
+            batch.setResourceTexture(slot, loadingTexture);
+            return model::TextureMapPointer();
+        }
+    };
+
     // Albedo
     if (materialKey.isAlbedoMap()) {
-        auto albedoMap = textureMaps[model::MaterialKey::ALBEDO_MAP];
-        if (albedoMap && albedoMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::ALBEDO_MAP, albedoMap->getTextureView());
-
-            if (!albedoMap->getTextureTransform().isIdentity()) {
-                albedoMap->getTextureTransform().getMatrix(texcoordTransform[0]);
-            }
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::ALBEDO_MAP, textureCache->getGrayTexture());
+        auto albedoMap = setTexture(Channel::ALBEDO_MAP, Slot::ALBEDO_MAP, textureCache->getGrayTexture());
+        if (albedoMap && !albedoMap->getTextureTransform().isIdentity()) {
+            // Albedo texcoords are also used for roughness, normal, metallic, occlusion
+            albedoMap->getTextureTransform().getMatrix(texcoordTransform[0]);
         }
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::ALBEDO_MAP, textureCache->getWhiteTexture());
@@ -162,84 +172,45 @@ void MeshPartPayload::bindMaterial(gpu::Batch& batch, const ShapePipeline::Locat
 
     // Roughness map
     if (materialKey.isRoughnessMap()) {
-        auto roughnessMap = textureMaps[model::MaterialKey::ROUGHNESS_MAP];
-        if (roughnessMap && roughnessMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::ROUGHNESS_MAP, roughnessMap->getTextureView());
-
-            // texcoord are assumed to be the same has albedo
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::ROUGHNESS_MAP, textureCache->getWhiteTexture());
-        }
+        setTexture(Channel::ROUGHNESS_MAP, Slot::ROUGHNESS_MAP, textureCache->getWhiteTexture());
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::ROUGHNESS_MAP, textureCache->getWhiteTexture());
     }
 
     // Normal map
     if (materialKey.isNormalMap()) {
-        auto normalMap = textureMaps[model::MaterialKey::NORMAL_MAP];
-        if (normalMap && normalMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::NORMAL_MAP, normalMap->getTextureView());
-
-            // texcoord are assumed to be the same has albedo
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::NORMAL_MAP, textureCache->getBlueTexture());
-        }
+        setTexture(Channel::NORMAL_MAP, Slot::NORMAL_MAP, textureCache->getBlueTexture());
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::NORMAL_MAP, nullptr);
     }
 
     // Metallic map
     if (materialKey.isMetallicMap()) {
-        auto specularMap = textureMaps[model::MaterialKey::METALLIC_MAP];
-        if (specularMap && specularMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::METALLIC_MAP, specularMap->getTextureView());
-
-            // texcoord are assumed to be the same has albedo
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::METALLIC_MAP, textureCache->getBlackTexture());
-        }
+        setTexture(Channel::METALLIC_MAP, Slot::METALLIC_MAP, textureCache->getBlackTexture());
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::METALLIC_MAP, nullptr);
     }
 
     // Occlusion map
     if (materialKey.isOcclusionMap()) {
-        auto specularMap = textureMaps[model::MaterialKey::OCCLUSION_MAP];
-        if (specularMap && specularMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::OCCLUSION_MAP, specularMap->getTextureView());
-
-            // texcoord are assumed to be the same has albedo
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::OCCLUSION_MAP, textureCache->getWhiteTexture());
-        }
+        setTexture(Channel::OCCLUSION_MAP, Slot::OCCLUSION_MAP, textureCache->getWhiteTexture());
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::OCCLUSION_MAP, nullptr);
     }
 
     // Emissive / Lightmap
     if (materialKey.isLightmapMap()) {
-        auto lightmapMap = textureMaps[model::MaterialKey::LIGHTMAP_MAP];
-
-        if (lightmapMap && lightmapMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::EMISSIVE_LIGHTMAP_MAP, lightmapMap->getTextureView());
-
+        auto lightmapMap = setTexture(Channel::LIGHTMAP_MAP, Slot::EMISSIVE_LIGHTMAP_MAP, textureCache->getGrayTexture());
+        if (lightmapMap) {
             auto lightmapOffsetScale = lightmapMap->getLightmapOffsetScale();
             batch._glUniform2f(locations->emissiveParams, lightmapOffsetScale.x, lightmapOffsetScale.y);
 
             if (!lightmapMap->getTextureTransform().isIdentity()) {
                 lightmapMap->getTextureTransform().getMatrix(texcoordTransform[1]);
             }
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::EMISSIVE_LIGHTMAP_MAP, textureCache->getGrayTexture());
         }
     } else if (materialKey.isEmissiveMap()) {
-        auto emissiveMap = textureMaps[model::MaterialKey::EMISSIVE_MAP];
-
-        if (emissiveMap && emissiveMap->isDefined()) {
-            batch.setResourceTexture(ShapePipeline::Slot::EMISSIVE_LIGHTMAP_MAP, emissiveMap->getTextureView());
-        } else {
-            batch.setResourceTexture(ShapePipeline::Slot::EMISSIVE_LIGHTMAP_MAP, textureCache->getBlackTexture());
-        }
+        auto emissiveMap = setTexture(Channel::EMISSIVE_MAP, Slot::EMISSIVE_LIGHTMAP_MAP, textureCache->getBlackTexture());
     } else {
         batch.setResourceTexture(ShapePipeline::Slot::EMISSIVE_LIGHTMAP_MAP, nullptr);
     }
