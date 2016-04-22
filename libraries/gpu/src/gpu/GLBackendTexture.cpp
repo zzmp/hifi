@@ -17,6 +17,10 @@
 
 using namespace gpu;
 
+void GLBackend::transferTexture(const TexturePointer& texture) {
+    syncGPUObject(texture);
+}
+
 GLenum gpuToGLTextureType(const Texture& texture) {
     switch (texture.getType()) {
     case Texture::TEX_2D:

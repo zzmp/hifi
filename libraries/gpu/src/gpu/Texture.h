@@ -428,12 +428,20 @@ public:
     const Sampler& getSampler() const { return _sampler; }
     Stamp getSamplerStamp() const { return _samplerStamp; }
 
+    static void transfer(const std::shared_ptr<Texture>& texture) { _transferFn(texture); }
+
+    void transfer() { }
+    bool isTransferred() { return _isTransferred; }
+
     // Only callable by the Backend
     void notifyMipFaceGPULoaded(uint16 level, uint8 face = 0) const { return _storage->notifyMipFaceGPULoaded(level, face); }
+    void notifyTransferred() { _isTransferred = true; }
 
     const GPUObjectPointer gpuObject {};
 
 protected:
+    friend class Context;
+
     std::unique_ptr< Storage > _storage;
 
     Stamp _stamp = 0;
@@ -461,6 +469,10 @@ protected:
     bool _autoGenerateMips = false;
     bool _isIrradianceValid = false;
     bool _defined = false;
+
+    typedef void (*TransferFn)(const std::shared_ptr<Texture>&);
+    static TransferFn _transferFn;
+    std::atomic<bool> _isTransferred = false;
    
     static Texture* create(Type type, const Element& texelFormat, uint16 width, uint16 height, uint16 depth, uint16 numSamples, uint16 numSlices, const Sampler& sampler);
 

@@ -99,4 +99,6 @@ void transferTextureSynchronous(const gpu::TexturePointer& texture) {
 
     object->_contentStamp = texture->getDataStamp();
     object->setSyncState(GLBackend::GLTexture::Transferred);
+
+    texture->notifyTransferred();
 }

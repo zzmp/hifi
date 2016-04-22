@@ -33,6 +33,7 @@ class GLBackend : public Backend {
     static void init();
     static Backend* createBackend();
     static bool makeProgram(Shader& shader, const Shader::BindingSet& bindings);
+    static void transferTexture(const TexturePointer&);
 
     explicit GLBackend(bool syncCache);
     GLBackend();

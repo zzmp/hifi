@@ -153,6 +153,7 @@ public:
         std::call_once(_initialized, [] {
             _createBackendCallback = T::createBackend;
             _makeProgramCallback = T::makeProgram;
+            Texture::_transferFn = T::transferTexture;
             T::init();
         });
     }

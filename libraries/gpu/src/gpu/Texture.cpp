@@ -22,6 +22,8 @@ static int TexturePointerMetaTypeId = qRegisterMetaType<TexturePointer>();
 std::atomic<uint32_t> Texture::_textureCPUCount{ 0 };
 std::atomic<Texture::Size> Texture::_textureCPUMemoryUsage{ 0 };
 
+Texture::TransferFn Texture::_transferFn{ nullptr };
+
 void Texture::updateTextureCPUMemoryUsage(Size prevObjectSize, Size newObjectSize) {
     if (prevObjectSize == newObjectSize) {
         return;
