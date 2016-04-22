@@ -111,6 +111,7 @@ public:
     using Pointer = std::shared_ptr<Geometry>;
 
     const NetworkJoints& getJoints() const { return *_joints; }
+    const SittingPoints& getSittingPoints() const { return *_sittingPoints; }
     const NetworkMeshes& getMeshes() const { return *_meshes; }
 
     std::shared_ptr<const NetworkMaterial> getShapeMaterial(int shapeID) const;
@@ -139,6 +140,7 @@ protected:
 
     // Shared across all geometries, constant throughout lifetime
     std::shared_ptr<const NetworkJoints> _joints;
+    std::shared_ptr<const SittingPoints> _sittingPoints;
     std::shared_ptr<const NetworkMeshes> _meshes;
     std::shared_ptr<const NetworkShapes> _shapes;
 

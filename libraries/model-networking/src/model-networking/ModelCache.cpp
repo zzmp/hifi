@@ -199,10 +199,7 @@ void GeometryDefinitionResource::downloadFinished(const QByteArray& data) {
     QThreadPool::globalInstance()->start(new GeometryReader(_self, _url, _mapping, data));
 }
 
-void GeometryDefinitionResource::setGeometryDefinition(FBXGeometry::Pointer fbxGeometry) {
-    // Assume ownership of the geometry pointer
-    std::unique_ptr<FBXGeometry> geometry(static_cast<FBXGeometry*>(fbxGeometry));
-
+void GeometryDefinitionResource::setGeometryDefinition(FBXGeometry::Pointer geometry) {
     // Move in joints, meshes, sitting points, and materials
     _joints = std::make_shared<NetworkJoints>(std::move(geometry->joints));
     _meshes = std::make_shared<NetworkMeshes>(std::move(geometry->meshes));

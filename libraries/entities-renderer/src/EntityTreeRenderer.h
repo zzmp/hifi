@@ -34,7 +34,7 @@ using ModelPointer = std::shared_ptr<Model>;
 using ModelWeakPointer = std::weak_ptr<Model>;
 
 // Generic client side Octree renderer class.
-class EntityTreeRenderer : public OctreeRenderer, public EntityItemFBXService, public Dependency {
+class EntityTreeRenderer : public OctreeRenderer, public EntityItemGeometryService, public Dependency {
     Q_OBJECT
 public:
     EntityTreeRenderer(bool wantScripts, AbstractViewStateInterface* viewState,
@@ -55,10 +55,9 @@ public:
 
     virtual void init();
 
-    virtual const FBXGeometry* getGeometryForEntity(EntityItemPointer entityItem);
+    virtual bool getGeometryForEntity(EntityItemPointer entityItem, SittingPoints& sittingPoints, Extents& extents);
     virtual ModelPointer getModelForEntityItem(EntityItemPointer entityItem);
-    virtual const FBXGeometry* getCollisionGeometryForEntity(EntityItemPointer entityItem);
-    
+
     /// clears the tree
     virtual void clear();
 
@@ -67,15 +66,15 @@ public:
 
     /// if a renderable entity item needs a model, we will allocate it for them
     Q_INVOKABLE ModelPointer allocateModel(const QString& url, const QString& collisionUrl);
-    
+
     /// if a renderable entity item needs to update the URL of a model, we will handle that for the entity
     Q_INVOKABLE ModelPointer updateModel(ModelPointer original, const QString& newUrl, const QString& collisionUrl);
 
     /// if a renderable entity item is done with a model, it should return it to us
     void releaseModel(ModelPointer model);
-    
+
     void deleteReleasedModels();
-    
+
     // event handles which may generate entity related events
     void mouseReleaseEvent(QMouseEvent* event);
     void mousePressEvent(QMouseEvent* event);
@@ -171,7 +170,7 @@ private:
     AbstractScriptingServicesInterface* _scriptingServices;
     bool _displayModelBounds;
     bool _dontDoPrecisionPicking;
-    
+
     bool _shuttingDown { false };
 
     QMultiMap<QUrl, EntityItemID> _waitingOnPreload;
@@ -194,7 +193,7 @@ private:
     float _previousStageAltitude;
     float _previousStageHour;
     int _previousStageDay;
-    
+
     QHash<EntityItemID, EntityItemPointer> _entitiesInScene;
     // For Scene.shouldRenderEntities
     QList<EntityItemID> _entityIDsLastInScene;
