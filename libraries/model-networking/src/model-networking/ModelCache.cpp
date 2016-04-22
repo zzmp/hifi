@@ -331,7 +331,11 @@ std::shared_ptr<const NetworkMaterial> Geometry::getShapeMaterial(int shapeID) c
 }
 
 void GeometryResource::deleter() {
-    releaseTextures();
+    // Explicitly release textures before being put in the cache
+    if (isCacheable()) {
+        releaseTextures();
+    }
+
     Resource::deleter();
 }
 
