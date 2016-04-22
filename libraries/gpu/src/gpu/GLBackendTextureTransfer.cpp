@@ -44,15 +44,16 @@ GLTextureTransferHelper::~GLTextureTransferHelper() {
 #endif
 }
 
-void GLTextureTransferHelper::transferTexture(const gpu::TexturePointer& texturePointer) {
-    GLBackend::GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texturePointer);
+void GLTextureTransferHelper::transferTexture(const gpu::TexturePointer& texture) {
+    assert(texture);
+
 #ifdef THREADED_TEXTURE_TRANSFER
-    TextureTransferPackage package{ texturePointer, 0};
+    GLBackend::GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texture);
+    TextureTransferPackage package{ texture, 0};
     object->setSyncState(GLBackend::GLTexture::Pending);
     queueItem(package);
 #else
-    object->transfer();
-    object->setSyncState(GLBackend::GLTexture::Transferred);
+    transferTextureSynchronous(texture);
 #endif
 }
 
@@ -73,26 +74,29 @@ void GLTextureTransferHelper::shutdown() {
 
 bool GLTextureTransferHelper::processQueueItems(const Queue& messages) {
     for (auto package : messages) {
-        TexturePointer texturePointer = package.texture.lock();
-        // Texture no longer exists, move on to the next
-        if (!texturePointer) {
-            continue;
-        }
-
-        GLBackend::GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texturePointer);
-        object->createTexture();
-
-        object->transfer();
-
-        object->updateSize();
-
-        glBindTexture(object->_target, 0);
-        auto writeSync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        glClientWaitSync(writeSync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
-        glDeleteSync(writeSync);
-
-        object->_contentStamp = texturePointer->getDataStamp();
-        object->setSyncState(GLBackend::GLTexture::Transferred);
+        transferTextureSynchronous(package.texture.lock());
     }
     return true;
+}
+
+void transferTextureSynchronous(const gpu::TexturePointer& texture) {
+    // Make sure the texture exists
+    if (!texture) {
+        return;
+    }
+
+    GLBackend::GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texture);
+    object->createTexture();
+
+    object->transfer();
+
+    object->updateSize();
+
+    glBindTexture(object->_target, 0);
+    auto writeSync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glClientWaitSync(writeSync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+    glDeleteSync(writeSync);
+
+    object->_contentStamp = texture->getDataStamp();
+    object->setSyncState(GLBackend::GLTexture::Transferred);
 }
