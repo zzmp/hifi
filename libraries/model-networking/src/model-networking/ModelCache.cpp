@@ -283,6 +283,7 @@ void Geometry::setTextures(const QVariantMap& textureMap) {
                 if (material->isCached()) {
                     // Copy the material to avoid mutating the cached version
                     material = std::make_shared<NetworkMaterial>(*material);
+                    material->_isCached = false;
                 }
 
                 material->setTextures(textureMap);
@@ -334,7 +335,7 @@ void GeometryResource::deleter() {
     Resource::deleter();
 }
 
-NetworkGeometry::NetworkGeometry(const GeometryResource::Pointer& networkGeometry) : _resource(networkGeometry) {
+NetworkGeometry::NetworkGeometry(const GeometryResource::Pointer& geometry) : _resource(geometry) {
     connect(_resource.data(), &Resource::finished, this, &NetworkGeometry::resourceFinished);
     connect(_resource.data(), &Resource::onRefresh, this, &NetworkGeometry::resourceRefreshed);
     if (_resource->isLoaded()) {
@@ -394,8 +395,8 @@ model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url, Textu
 }
 
 NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, const QUrl& textureBaseUrl) :
-    model::Material(*material._material), _state { std::make_shared<State>() }, _isCached { true }
-{
+    model::Material(*material._material),
+    _state{ std::make_shared<State>() } {
     _textures = std::vector<Texture>(MapChannel::NUM_MAP_CHANNELS);
     if (!material.albedoTexture.filename.isEmpty()) {
         auto map = fetchTextureMap(textureBaseUrl, material.albedoTexture, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
