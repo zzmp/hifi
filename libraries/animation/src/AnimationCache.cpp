@@ -123,7 +123,6 @@ void Animation::animationParseSuccess(FBXGeometry::Pointer geometry) {
 
     qCDebug(animation) << "Animation parse success" << _url.toDisplayString();
 
-    // Invalidate the geometry by moving out of it
     _joints.reset(new FBXJoints(std::move(geometry->joints)));
     _animationFrames.reset(new FBXAnimationFrames(std::move(geometry->animationFrames)));
 

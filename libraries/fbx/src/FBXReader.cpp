@@ -44,7 +44,7 @@ static int FBXGeometryPointerMetaTypeId = qRegisterMetaType<FBXGeometry::Pointer
 QStringList FBXJoints::getJointNames() const {
     QStringList names;
     names.reserve(size());
-    for (const FBXJoint& joint : *this) {
+    foreach (const FBXJoint& joint, *this) {
         names.append(joint.name);
     }
     return names;
@@ -52,7 +52,7 @@ QStringList FBXJoints::getJointNames() const {
 
 bool FBXMeshes::hasBlendedMeshes() const {
     if (!isEmpty()) {
-        for (const FBXMesh& mesh : *this) {
+        foreach (const FBXMesh& mesh, *this) {
             if (!mesh.blendshapes.isEmpty()) {
                 return true;
             }
@@ -101,7 +101,7 @@ bool FBXMeshes::convexHullContains(const glm::vec3& point) const {
     }
 
     // Check that the point is contained in at least one convex mesh.
-    for (const auto& mesh : *this) {
+    foreach (const auto& mesh, *this) {
         bool insideMesh = true;
 
         // To be considered inside a convex mesh,
