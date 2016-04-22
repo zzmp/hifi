@@ -79,7 +79,7 @@ bool GLTextureTransferHelper::processQueueItems(const Queue& messages) {
     return true;
 }
 
-void transferTextureSynchronous(const gpu::TexturePointer& texture) {
+void GLTextureTransferHelper::transferTextureSynchronous(const gpu::TexturePointer& texture) {
     // Make sure the texture exists
     if (!texture) {
         return;
