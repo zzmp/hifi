@@ -68,21 +68,20 @@ public:
     /// Returns the a black texture (useful for a default).
     const gpu::TexturePointer& getBlackTexture();
 
-    // Returns a map used to compress the normals through a fitting scale algorithm
+    // Returns a map used to compress the normals through a fitting scale algorithm.
     const gpu::TexturePointer& getNormalFittingTexture();
 
-    /// Returns a texture version of an image file
+    /// Returns the default texture for a given texture type.
+    const gpu::TexturePointer& getDefaultTexture(TextureType type = DEFAULT_TEXTURE);
+
+    /// Returns a texture version of an image file.
     static gpu::TexturePointer getImageTexture(const QString& path, TextureType type = DEFAULT_TEXTURE);
 
     /// Loads a texture from the specified URL.
     NetworkTexturePointer getTexture(const QUrl& url, TextureType type = DEFAULT_TEXTURE,
         const QByteArray& content = QByteArray());
-    
-    typedef gpu::Texture* TextureLoader(const QImage& image, const std::string& srcImageName);
-    
-    typedef std::function<TextureLoader> TextureLoaderFunc;
-protected:
 
+protected:
     virtual QSharedPointer<Resource> createResource(const QUrl& url,
         const QSharedPointer<Resource>& fallback, bool delayLoad, const void* extra);
         
@@ -112,23 +111,22 @@ class NetworkTexture : public Resource, public Texture {
     Q_OBJECT
 
 public:
-    
-    typedef TextureCache::TextureLoaderFunc TextureLoaderFunc;
-    
     NetworkTexture(const QUrl& url, TextureType type, const QByteArray& content);
-    NetworkTexture(const QUrl& url, const TextureLoaderFunc& textureLoader, const QByteArray& content);
 
     int getOriginalWidth() const { return _originalWidth; }
     int getOriginalHeight() const { return _originalHeight; }
     int getWidth() const { return _width; }
     int getHeight() const { return _height; }
     
-    TextureLoaderFunc getTextureLoader() const;
-
 signals:
     void networkTextureCreated(const QWeakPointer<NetworkTexture>& self);
 
 protected:
+    typedef gpu::Texture* TextureLoader(const QImage& image, const std::string& srcImageName);
+    typedef std::function<TextureLoader> TextureLoaderFunc;
+
+    friend class ImageReader;
+    friend class TextureCache;
 
     virtual bool isCacheable() const override { return _loaded; }
 
@@ -137,13 +135,33 @@ protected:
     Q_INVOKABLE void loadContent(const QByteArray& content);
     Q_INVOKABLE void setImage(gpu::TexturePointer texture, int originalWidth, int originalHeight);
 
-private:
-    TextureType _type;
-    TextureLoaderFunc _textureLoader;
-    int _originalWidth { 0 };
-    int _originalHeight { 0 };
-    int _width { 0 };
-    int _height { 0 };
+    TextureType _type{ DEFAULT_TEXTURE };
+    TextureLoaderFunc _textureLoader{ [](const QImage&, const std::string&){ return nullptr; } };
+    int _originalWidth{ 0 };
+    int _originalHeight{ 0 };
+    int _width{ 0 };
+    int _height{ 0 };
+
+    // Static loading members
+    TextureLoaderFunc getTextureLoader() const;
+    static TextureLoaderFunc getTextureLoader(TextureType type);
+
+    static void defineColorTexelFormats(gpu::Element& formatGPU, gpu::Element& formatMip, const QImage& srcImage, bool isLinear, bool doCompress);
+    static const QImage process2DImageColor(const QImage& srcImage, bool& validAlpha, bool& alphaAsMask);
+
+    static gpu::Texture* process2DTextureColorFromImage(const QImage& srcImage, bool isLinear, bool doCompress, bool generateMips, const gpu::TexturePointer& defaultTexter);
+    static gpu::Texture* processCubeTextureColorFromImage(const QImage& srcImage, const std::string& srcImageName, bool isLinear, bool doCompress, bool generateMips, bool generateIrradiance, const gpu::TexturePointer& defaultTexter);
+
+    static gpu::Texture* create2DTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createAlbedoTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createEmissiveTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createNormalTextureFromNormalImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createNormalTextureFromBumpImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createRoughnessTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createRoughnessTextureFromGlossImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createMetallicTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createLightmapTextureFromImage(const QImage& image, const std::string& srcImageName);
+    static gpu::Texture* createCubeTextureFromImage(const QImage& image, const std::string& srcImageName);
 };
 
 #endif // hifi_TextureCache_h

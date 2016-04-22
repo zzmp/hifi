@@ -143,6 +143,8 @@ class Texture : public Resource {
     static std::atomic<Size> _textureCPUMemoryUsage;
     static void updateTextureCPUMemoryUsage(Size prevObjectSize, Size newObjectSize);
 public:
+    using Pointer = std::shared_ptr<Texture>;
+
     static uint32_t getTextureCPUCount();
     static Size getTextureCPUMemoryUsage();
     static uint32_t getTextureGPUCount();
@@ -276,10 +278,10 @@ public:
     };
 
  
-    static Texture* create1D(const Element& texelFormat, uint16 width, const Sampler& sampler = Sampler());
-    static Texture* create2D(const Element& texelFormat, uint16 width, uint16 height, const Sampler& sampler = Sampler());
-    static Texture* create3D(const Element& texelFormat, uint16 width, uint16 height, uint16 depth, const Sampler& sampler = Sampler());
-    static Texture* createCube(const Element& texelFormat, uint16 width, const Sampler& sampler = Sampler());
+    static Texture* create1D(const Element& texelFormat, uint16 width, const Sampler& sampler = Sampler(), const Pointer& defaultTexture = nullptr);
+    static Texture* create2D(const Element& texelFormat, uint16 width, uint16 height, const Sampler& sampler = Sampler(), const Pointer& defaultTexture = nullptr);
+    static Texture* create3D(const Element& texelFormat, uint16 width, uint16 height, uint16 depth, const Sampler& sampler = Sampler(), const Pointer& defaultTexture = nullptr);
+    static Texture* createCube(const Element& texelFormat, uint16 width, const Sampler& sampler = Sampler(), const Pointer& defaultTexture = nullptr);
 
     Texture();
     Texture(const Texture& buf); // deep copy of the sysmem texture
@@ -414,6 +416,8 @@ public:
  
     bool isDefined() const { return _defined; }
 
+    const Pointer& getDefault() const { return _default; }
+
     // Usage is a a set of flags providing Semantic about the usage of the Texture.
     void setUsage(const Usage& usage) { _usage = usage; }
     Usage getUsage() const { return _usage; }
@@ -470,17 +474,18 @@ protected:
     bool _isIrradianceValid = false;
     bool _defined = false;
 
+    Pointer _default;
+
     typedef void (*TransferFn)(const std::shared_ptr<Texture>&);
     static TransferFn _transferFn;
     std::atomic<bool> _isTransferred = false;
    
-    static Texture* create(Type type, const Element& texelFormat, uint16 width, uint16 height, uint16 depth, uint16 numSamples, uint16 numSlices, const Sampler& sampler);
+    static Texture* create(Type type, const Element& texelFormat, uint16 width, uint16 height, uint16 depth, uint16 numSamples, uint16 numSlices, const Sampler& sampler, const Pointer& defaultTexture);
 
     Size resize(Type type, const Element& texelFormat, uint16 width, uint16 height, uint16 depth, uint16 numSamples, uint16 numSlices);
 };
-
-typedef std::shared_ptr<Texture> TexturePointer;
-typedef std::vector< TexturePointer > Textures;
+using TexturePointer = Texture::Pointer;
+using Textures = std::vector<TexturePointer>;
 
  // TODO: For now TextureView works with Texture as a place holder for the Texture.
  // The overall logic should be about the same except that the Texture will be a real GL Texture under the hood

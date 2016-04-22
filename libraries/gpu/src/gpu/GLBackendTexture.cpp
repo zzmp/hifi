@@ -202,15 +202,7 @@ bool GLBackend::GLTexture::isReady() const {
         return false;
     }
 
-    // If we're out of date, but the transfer is in progress, report ready
-    // as a special case
-    auto syncState = _syncState.load();
-
-    if (isOutdated()) {
-        return Pending == syncState;
-    }
-
-    return Idle == syncState;
+    return !isOutdated() && Idle == _syncState;
 }
 
 // Move content bits from the CPU to the GPU for a given mip / face
@@ -302,15 +294,14 @@ void GLBackend::GLTexture::postTransfer() {
     }
 }
 
-GLBackend::GLTexture* GLBackend::syncGPUObject(const TexturePointer& texturePointer, bool needTransfer) {
-    const Texture& texture = *texturePointer;
-    if (!texture.isDefined()) {
+GLBackend::GLTexture* GLBackend::syncGPUObject(const TexturePointer& texture, bool needTransfer) {
+    if (!texture || !texture->isDefined()) {
         // NO texture definition yet so let's avoid thinking
         return nullptr;
     }
 
     // If the object hasn't been created, or the object definition is out of date, drop and re-create
-    GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(texture);
+    GLTexture* object = Backend::getGPUObject<GLBackend::GLTexture>(*texture);
     if (object && object->isReady()) {
         return object;
     }
@@ -321,13 +312,13 @@ GLBackend::GLTexture* GLBackend::syncGPUObject(const TexturePointer& texturePoin
     // for easier use of immutable storage)
     if (!object || object->isInvalid()) {
         // This automatically destroys the old texture
-        object = new GLTexture(texture);
+        object = new GLTexture(*texture);
     }
 
-    // Object maybe doens't neet to be tranasferred after creation
+    // Object maybe doesn't neet to be transferred after creation
     if (!needTransfer) {
         object->createTexture();
-        object->_contentStamp = texturePointer->getDataStamp();
+        object->_contentStamp = texture->getDataStamp();
         object->postTransfer();
         return object;
     }
@@ -336,15 +327,18 @@ GLBackend::GLTexture* GLBackend::syncGPUObject(const TexturePointer& texturePoin
     // (outdated objects that are already in transfer will have reported 'true' for ready()
     if (object->isOutdated()) {
         Backend::incrementTextureGPUTransferCount();
-        _textureTransferHelper->transferTexture(texturePointer);
+        _textureTransferHelper->transferTexture(texture);
     }
 
-    if (GLTexture::Transferred == object->getSyncState()) {
-        Backend::decrementTextureGPUTransferCount();
-        object->postTransfer();
+    switch (object->getSyncState()) {
+        case GLTexture::Pending:
+            return syncGPUObject(texture->getDefault());
+        case GLTexture::Transferred:
+            Backend::decrementTextureGPUTransferCount();
+            object->postTransfer();
+        default:
+            return object;
     }
-
-    return object;
 }
 
 std::shared_ptr<GLTextureTransferHelper> GLBackend::_textureTransferHelper;
