@@ -66,13 +66,6 @@ protected:
 
     using MapChannel = model::Material::MapChannel;
 
-    class Texture {
-    public:
-        QString name;
-        QSharedPointer<NetworkTexture> texture;
-    };
-    std::vector<Texture> _textures;
-
     void setTextures(const QVariantMap& textureMap);
 
     static const QString NO_TEXTURE;
@@ -84,6 +77,13 @@ protected:
 
     // Materials can be mutated, but the cached version should never be changed.
     const bool& isCached() const { return _isCached; }
+
+    class Texture {
+    public:
+        QString name;
+        QSharedPointer<NetworkTexture> texture;
+    };
+    std::vector<Texture> _textures;
 
 private:
     // Helpers for the ctors
@@ -102,7 +102,7 @@ private:
     };
     std::shared_ptr<State> _state;
 
-    bool _isCached { false };
+    bool _isCached { true };
 };
 
 
@@ -183,7 +183,7 @@ public:
     using Pointer = std::shared_ptr<NetworkGeometry>;
 
     NetworkGeometry() = delete;
-    NetworkGeometry(const GeometryResource::Pointer& networkGeometry);
+    NetworkGeometry(const GeometryResource::Pointer& geometry);
 
     const QUrl& getURL() { return _resource->getURL(); }
 
