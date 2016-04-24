@@ -277,8 +277,8 @@ bool RenderableModelEntityItem::getAnimationFrame() {
 
     if (_animation && _animation->isLoaded()) {
 
-        const QVector<FBXAnimationFrame>&  frames = _animation->getFramesReference(); // NOTE: getFrames() is too heavy
-        auto& fbxJoints = _animation->getGeometry().joints;
+        const auto&  frames = _animation->getFramesReference(); // NOTE: getFrames() is too heavy
+        const auto& fbxJoints = _animation->getJoints();
 
         int frameCount = frames.size();
         if (frameCount > 0) {
@@ -615,17 +615,17 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // should never fall in here when collision model not fully loaded
         // hence we assert that all geometries exist and are loaded
         assert(_model->isLoaded() && _model->isCollisionLoaded());
-        const FBXGeometry& renderGeometry = _model->getFBXGeometry();
-        const FBXGeometry& collisionGeometry = _model->getCollisionFBXGeometry();
+        const auto& renderGeometry = _model->getGeometry();
+        const auto& collisionGeometry = _model->getCollisionGeometry();
 
         _points.clear();
         unsigned int i = 0;
 
         // the way OBJ files get read, each section under a "g" line is its own meshPart.  We only expect
         // to find one actual "mesh" (with one or more meshParts in it), but we loop over the meshes, just in case.
-        foreach (const FBXMesh& mesh, collisionGeometry.meshes) {
+        foreach (const auto& mesh, collisionGeometry->getMeshes()) {
             // each meshPart is a convex hull
-            foreach (const FBXMeshPart &meshPart, mesh.parts) {
+            foreach (const auto&meshPart, mesh.parts) {
                 QVector<glm::vec3> pointsInPart;
 
                 // run through all the triangles and (uniquely) add each point to the hull
@@ -693,7 +693,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
         // to the visual model and apply them to the collision model (without regard for the
         // collision model's extents).
 
-        glm::vec3 scale = getDimensions() / renderGeometry.getUnscaledMeshExtents().size();
+        glm::vec3 scale = getDimensions() / renderGeometry->getMeshes().getUnscaledMeshExtents().size();
         // multiply each point by scale before handing the point-set off to the physics engine.
         // also determine the extents of the collision model.
         AABox box;
@@ -719,7 +719,7 @@ void RenderableModelEntityItem::computeShapeInfo(ShapeInfo& info) {
 
 bool RenderableModelEntityItem::contains(const glm::vec3& point) const {
     if (EntityItem::contains(point) && _model && _model->isCollisionLoaded()) {
-        return _model->getCollisionFBXGeometry().convexHullContains(worldToEntity(point));
+        return _model->getCollisionGeometry()->getMeshes().convexHullContains(worldToEntity(point));
     }
 
     return false;

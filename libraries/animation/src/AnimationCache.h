@@ -53,16 +53,14 @@ public:
 
     explicit Animation(const QUrl& url);
 
-    const FBXGeometry& getGeometry() const { return *_geometry; }
-
     virtual bool isLoaded() const override;
 
+    const FBXJoints& getJoints() const { return *_joints; }
+    const FBXAnimationFrames& getFramesReference() const { return *_animationFrames; }
     
     Q_INVOKABLE QStringList getJointNames() const;
-    
-    Q_INVOKABLE QVector<FBXAnimationFrame> getFrames() const;
+    Q_INVOKABLE FBXAnimationFrames getFrames() const;
 
-    const QVector<FBXAnimationFrame>& getFramesReference() const;
     
 protected:
     virtual void downloadFinished(const QByteArray& data) override;
@@ -72,8 +70,8 @@ protected slots:
     void animationParseError(int error, QString str);
 
 private:
-    
-    FBXGeometry::Pointer _geometry;
+    std::unique_ptr<FBXJoints> _joints;
+    std::unique_ptr<FBXAnimationFrames> _animationFrames;
 };
 
 /// Reads geometry in a worker thread.

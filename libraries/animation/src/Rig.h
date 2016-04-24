@@ -96,8 +96,8 @@ public:
     void restoreRoleAnimation(const QString& role);
     void prefetchAnimation(const QString& url);
 
-    void initJointStates(const FBXGeometry& geometry, const glm::mat4& modelOffset);
-    void reset(const FBXGeometry& geometry);
+    void initJointStates(const FBXJoints& joints, const glm::mat4& modelOffset);
+    void reset(const FBXJoints& joints);
     bool jointStatesEmpty();
     int getJointStateCount() const;
     int indexOfJoint(const QString& jointName) const;
@@ -167,7 +167,7 @@ public:
 
     // legacy
     float getLimbLength(int jointIndex, const QVector<int>& freeLineage,
-                        const glm::vec3 scale, const QVector<FBXJoint>& fbxJoints) const;
+                        const glm::vec3 scale, const FBXJoints& fbxJoints) const;
 
     // legacy
     glm::quat setJointRotationInBindFrame(int jointIndex, const glm::quat& rotation, float priority);
@@ -218,7 +218,7 @@ public:
     void copyJointsIntoJointData(QVector<JointData>& jointDataVec) const;
     void copyJointsFromJointData(const QVector<JointData>& jointDataVec);
 
-    void computeAvatarBoundingCapsule(const FBXGeometry& geometry, float& radiusOut, float& heightOut, glm::vec3& offsetOut) const;
+    void computeAvatarBoundingCapsule(const FBXJoints& joints, float& radiusOut, float& heightOut, glm::vec3& offsetOut) const;
 
     void setEnableInverseKinematics(bool enable);
 

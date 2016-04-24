@@ -267,24 +267,10 @@ inline bool operator!=(const SittingPoint& lhs, const SittingPoint& rhs)
     return (lhs.name != rhs.name) || (lhs.position != rhs.position) || (lhs.rotation != rhs.rotation);
 }
 
-/// A set of meshes extracted from an FBX document.
-class FBXGeometry {
+class FBXJoints : public QVector<FBXJoint> {
 public:
-    using Pointer = std::shared_ptr<FBXGeometry>;
-
-    QString author;
-    QString applicationName; ///< the name of the application that generated the model
-
-    QVector<FBXJoint> joints;
-    QHash<QString, int> jointIndices; ///< 1-based, so as to more easily detect missing indices
-    bool hasSkeletonJoints;
-    
-    QVector<FBXMesh> meshes;
-
-    QHash<QString, FBXMaterial> materials;
-
-    glm::mat4 offset;
-    
+    QHash<QString, int> indices; ///< 1-based, so as to more easily detect missing indices
+ 
     int leftEyeJointIndex = -1;
     int rightEyeJointIndex = -1;
     int neckJointIndex = -1;
@@ -296,38 +282,73 @@ public:
     int leftToeJointIndex = -1;
     int rightToeJointIndex = -1;
 
+    glm::mat4 offset;
+
+    int getJointIndex(const QString& name) const { return indices.value(name) - 1; }
+    QStringList getJointNames() const;
+
+    bool hasSkeletonJoints() const { return _hasSkeletonJoints; }
+
+protected:
+    friend class FBXReader;
+
+    bool _hasSkeletonJoints;
+};
+
+class FBXMeshes : public QVector<FBXMesh> {
+public:
+    Extents meshExtents;
+    Extents bindExtents;
+
     float leftEyeSize = 0.0f;  // Maximum mesh extents dimension
     float rightEyeSize = 0.0f;
 
-    QVector<int> humanIKJointIndices;
-    
-    glm::vec3 palmDirection;
-    
-    QVector<SittingPoint> sittingPoints;
-    
-    glm::vec3 neckPivot;
-    
-    Extents bindExtents;
-    Extents meshExtents;
-    
-    QVector<FBXAnimationFrame> animationFrames;
-        
-    int getJointIndex(const QString& name) const { return jointIndices.value(name) - 1; }
-    QStringList getJointNames() const;
-    
-    bool hasBlendedMeshes() const;
+    glm::mat4 offset;
 
-    /// Returns the unscaled extents of the model's mesh
     Extents getUnscaledMeshExtents() const;
+
+    QString getModelNameOfMesh(int meshIndex) const;
+
+    bool hasBlendedMeshes() const;
 
     bool convexHullContains(const glm::vec3& point) const;
 
-    QHash<int, QString> meshIndicesToModelNames;
-    
-    /// given a meshIndex this will return the name of the model that mesh belongs to if known
-    QString getModelNameOfMesh(int meshIndex) const;
-    
+protected:
+    friend class FBXReader;
+
+    QHash<int, QString> _meshIndicesToModelNames;
+
+    bool convexHullContainsHelper(const glm::vec3& point, const FBXMesh& mesh,
+                                const QVector<int>& indices, int primitiveSize) const;
+};
+
+using FBXMaterials = QHash<QString, FBXMaterial>;
+using FBXAnimationFrames = QVector<FBXAnimationFrame>;
+using SittingPoints = QVector<SittingPoint>;
+
+/// A set of meshes extracted from an FBX document.
+class FBXGeometry {
+public:
+    using Pointer = std::shared_ptr<FBXGeometry>;
+
+    QString author;
+    QString applicationName; ///< the name of the application that generated the model
     QList<QString> blendshapeChannelNames;
+
+    FBXJoints joints;
+    FBXMeshes meshes;
+    FBXMaterials materials;
+    FBXAnimationFrames animationFrames;
+    SittingPoints sittingPoints;
+
+protected:
+    friend class FBXReader;
+
+    // unused
+    QVector<int> _humanIKJointIndices;
+
+    glm::vec3 _palmDirection;
+    glm::vec3 _neckPivot;
 };
 
 Q_DECLARE_METATYPE(FBXGeometry)

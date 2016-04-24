@@ -90,7 +90,8 @@ void GeometryMappingResource::downloadFinished(const QByteArray& data) {
 
 void GeometryMappingResource::onGeometryMappingLoaded(bool success) {
     if (success && _geometryResource) {
-        _geometry = _geometryResource->_geometry;
+        _joints = _geometryResource->_joints;
+        _sittingPoints = _geometryResource->_sittingPoints;
         _shapes = _geometryResource->_shapes;
         _meshes = _geometryResource->_meshes;
         _materials = _geometryResource->_materials;
@@ -198,32 +199,30 @@ void GeometryDefinitionResource::downloadFinished(const QByteArray& data) {
     QThreadPool::globalInstance()->start(new GeometryReader(_self, _url, _mapping, data));
 }
 
-void GeometryDefinitionResource::setGeometryDefinition(FBXGeometry::Pointer fbxGeometry) {
-    // Assume ownership of the geometry pointer
-    _geometry = fbxGeometry;
+void GeometryDefinitionResource::setGeometryDefinition(FBXGeometry::Pointer geometry) {
+    // Move in joints, meshes, sitting points, and materials
+    _joints = std::make_shared<NetworkJoints>(std::move(geometry->joints));
+    _meshes = std::make_shared<NetworkMeshes>(std::move(geometry->meshes));
+    _sittingPoints = std::make_shared<SittingPoints>(std::move(geometry->sittingPoints));
 
-    // Copy materials
     QHash<QString, size_t> materialIDAtlas;
-    for (const FBXMaterial& material : _geometry->materials) {
+    for (FBXMaterial& material : geometry->materials) {
         materialIDAtlas[material.materialID] = _materials.size();
-        _materials.push_back(std::make_shared<NetworkMaterial>(material, _textureBaseUrl));
+        _materials.push_back(std::make_shared<NetworkMaterial>(std::move(material), _textureBaseUrl));
     }
 
-    std::shared_ptr<NetworkMeshes> meshes = std::make_shared<NetworkMeshes>();
-    std::shared_ptr<NetworkShapes> shapes = std::make_shared<NetworkShapes>();
+    // Use an intermediate object because _shapes is const.
+    auto shapes = std::make_shared<NetworkShapes>();
     int meshID = 0;
-    for (const FBXMesh& mesh : _geometry->meshes) {
-        // Copy mesh pointers
-        meshes->emplace_back(mesh._mesh);
+    for (const NetworkMesh& mesh : *_meshes) {
         int partID = 0;
         for (const FBXMeshPart& part : mesh.parts) {
             // Construct local shapes
-            shapes->push_back(std::make_shared<NetworkShape>(meshID, partID, (int)materialIDAtlas[part.materialID]));
+            shapes->emplace_back(meshID, partID, (int)materialIDAtlas[part.materialID]);
             partID++;
         }
         meshID++;
     }
-    _meshes = meshes;
     _shapes = shapes;
 
     finishedLoading(true);
@@ -253,8 +252,8 @@ std::shared_ptr<NetworkGeometry> ModelCache::getGeometry(const QUrl& url, const 
     GeometryExtra geometryExtra = { mapping, textureBaseUrl };
     GeometryResource::Pointer resource = getResource(url, QUrl(), true, &geometryExtra).staticCast<GeometryResource>();
     if (resource) {
-        if (resource->isLoaded() && resource->shouldSetTextures()) {
-            resource->setTextures();
+        if (resource->isLoaded()) {
+            resource->resetTextures();
         }
         return std::make_shared<NetworkGeometry>(resource);
     } else {
@@ -265,26 +264,13 @@ std::shared_ptr<NetworkGeometry> ModelCache::getGeometry(const QUrl& url, const 
 const QVariantMap Geometry::getTextures() const {
     QVariantMap textures;
     for (const auto& material : _materials) {
-        for (const auto& texture : material->_textures) {
-            if (texture.texture) {
-                textures[texture.name] = texture.texture->getURL();
-            }
+        auto map = material->getTextures();
+        for (auto texture = map.cbegin(); texture != map.cend(); ++texture) {
+            textures[texture.key()] = texture.value();
         }
     }
 
     return textures;
-}
-
-// FIXME: The materials should only be copied when modified, but the Model currently caches the original
-Geometry::Geometry(const Geometry& geometry) {
-    _geometry = geometry._geometry;
-    _meshes = geometry._meshes;
-    _shapes = geometry._shapes;
-
-    _materials.reserve(geometry._materials.size());
-    for (const auto& material : geometry._materials) {
-        _materials.push_back(std::make_shared<NetworkMaterial>(*material));
-    }
 }
 
 void Geometry::setTextures(const QVariantMap& textureMap) {
@@ -292,19 +278,18 @@ void Geometry::setTextures(const QVariantMap& textureMap) {
         for (auto& material : _materials) {
             // Check if any material textures actually changed
             if (std::any_of(material->_textures.cbegin(), material->_textures.cend(),
-                [&textureMap](const NetworkMaterial::Textures::value_type& it) { return it.texture && textureMap.contains(it.name); })) { 
+                [&textureMap](const std::vector<NetworkMaterial::Texture>::value_type& it) { return it.texture && textureMap.contains(it.name); })) { 
 
-                // FIXME: The Model currently caches the materials (waste of space!)
-                //        so they must be copied in the Geometry copy-ctor
-                // if (material->isOriginal()) {
-                //    // Copy the material to avoid mutating the cached version
-                //    material = std::make_shared<NetworkMaterial>(*material);
-                //}
+                if (material->isCached()) {
+                    // Copy the material to avoid mutating the cached version
+                    material = std::make_shared<NetworkMaterial>(*material);
+                    material->_isCached = false;
+                }
 
                 material->setTextures(textureMap);
                 _areTexturesLoaded = false;
 
-                // If we only use cached textures, they should all be loaded
+                // If we only use cached textures, they should all be loaded, so we should check
                 areTexturesLoaded();
             }
         }
@@ -318,7 +303,7 @@ bool Geometry::areTexturesLoaded() const {
         for (auto& material : _materials) {
             // Check if material textures are loaded
             if (std::any_of(material->_textures.cbegin(), material->_textures.cend(),
-                [](const NetworkMaterial::Textures::value_type& it) { return it.texture && !it.texture->isLoaded(); })) {
+                [](const std::vector<NetworkMaterial::Texture>::value_type& it) { return it.texture && !it.texture->isLoaded(); })) {
 
                 return false;
             }
@@ -335,9 +320,9 @@ bool Geometry::areTexturesLoaded() const {
     return true;
 }
 
-const std::shared_ptr<const NetworkMaterial> Geometry::getShapeMaterial(int shapeID) const {
+std::shared_ptr<const NetworkMaterial> Geometry::getShapeMaterial(int shapeID) const {
     if ((shapeID >= 0) && (shapeID < (int)_shapes->size())) {
-        int materialID = _shapes->at(shapeID)->materialID;
+        int materialID = _shapes->at(shapeID).materialID;
         if ((materialID >= 0) && (materialID < (int)_materials.size())) {
             return _materials[materialID];
         }
@@ -346,21 +331,15 @@ const std::shared_ptr<const NetworkMaterial> Geometry::getShapeMaterial(int shap
 }
 
 void GeometryResource::deleter() {
-    resetTextures();
+    // Explicitly release textures before being put in the cache
+    if (isCacheable()) {
+        releaseTextures();
+    }
+
     Resource::deleter();
 }
 
-void GeometryResource::setTextures() {
-    for (const FBXMaterial& material : _geometry->materials) {
-        _materials.push_back(std::make_shared<NetworkMaterial>(material, _textureBaseUrl));
-    }
-}
-
-void GeometryResource::resetTextures() {
-    _materials.clear();
-}
-
-NetworkGeometry::NetworkGeometry(const GeometryResource::Pointer& networkGeometry) : _resource(networkGeometry) {
+NetworkGeometry::NetworkGeometry(const GeometryResource::Pointer& geometry) : _resource(geometry) {
     connect(_resource.data(), &Resource::finished, this, &NetworkGeometry::resourceFinished);
     connect(_resource.data(), &Resource::onRefresh, this, &NetworkGeometry::resourceRefreshed);
     if (_resource->isLoaded()) {
@@ -419,14 +398,14 @@ model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url, Textu
     return map;
 }
 
-NetworkMaterial::NetworkMaterial(const FBXMaterial& material, const QUrl& textureBaseUrl) :
-    model::Material(*material._material)
-{
-    _textures = Textures(MapChannel::NUM_MAP_CHANNELS);
+NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, const QUrl& textureBaseUrl) :
+    model::Material(*material._material),
+    _state{ std::make_shared<State>() } {
+    _textures = std::vector<Texture>(MapChannel::NUM_MAP_CHANNELS);
     if (!material.albedoTexture.filename.isEmpty()) {
         auto map = fetchTextureMap(textureBaseUrl, material.albedoTexture, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
-        _albedoTransform = material.albedoTexture.transform;
-        map->setTextureTransform(_albedoTransform);
+        _state->_albedoTransform = material.albedoTexture.transform;
+        map->setTextureTransform(_state->_albedoTransform);
 
         if (!material.opacityTexture.filename.isEmpty()) {
             if (material.albedoTexture.filename == material.opacityTexture.filename) {
@@ -474,17 +453,15 @@ NetworkMaterial::NetworkMaterial(const FBXMaterial& material, const QUrl& textur
 
     if (!material.lightmapTexture.filename.isEmpty()) {
         auto map = fetchTextureMap(textureBaseUrl, material.lightmapTexture, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
-        _lightmapTransform = material.lightmapTexture.transform;
-        _lightmapParams = material.lightmapParams;
-        map->setTextureTransform(_lightmapTransform);
-        map->setLightmapOffsetScale(_lightmapParams.x, _lightmapParams.y);
+        _state->_lightmapTransform = material.lightmapTexture.transform;
+        _state->_lightmapParams = material.lightmapParams;
+        map->setTextureTransform(_state->_lightmapTransform);
+        map->setLightmapOffsetScale(_state->_lightmapParams.x, _state->_lightmapParams.y);
         setTextureMap(MapChannel::LIGHTMAP_MAP, map);
     }
 }
 
 void NetworkMaterial::setTextures(const QVariantMap& textureMap) {
-    _isOriginal = false;
-
     const auto& albedoName = getTextureName(MapChannel::ALBEDO_MAP);
     const auto& normalName = getTextureName(MapChannel::NORMAL_MAP);
     const auto& roughnessName = getTextureName(MapChannel::ROUGHNESS_MAP);
@@ -496,7 +473,7 @@ void NetworkMaterial::setTextures(const QVariantMap& textureMap) {
     if (!albedoName.isEmpty()) {
         auto url = textureMap.contains(albedoName) ? textureMap[albedoName].toUrl() : QUrl();
         auto map = fetchTextureMap(url, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
-        map->setTextureTransform(_albedoTransform);
+        map->setTextureTransform(_state->_albedoTransform);
         // when reassigning the albedo texture we also check for the alpha channel used as opacity
         map->setUseAlphaChannel(true);
         setTextureMap(MapChannel::ALBEDO_MAP, map);
@@ -537,10 +514,47 @@ void NetworkMaterial::setTextures(const QVariantMap& textureMap) {
     if (!lightmapName.isEmpty()) {
         auto url = textureMap.contains(lightmapName) ? textureMap[lightmapName].toUrl() : QUrl();
         auto map = fetchTextureMap(url, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
-        map->setTextureTransform(_lightmapTransform);
-        map->setLightmapOffsetScale(_lightmapParams.x, _lightmapParams.y);
+        map->setTextureTransform(_state->_lightmapTransform);
+        map->setLightmapOffsetScale(_state->_lightmapParams.x, _state->_lightmapParams.y);
         setTextureMap(MapChannel::LIGHTMAP_MAP, map);
     }
+
+    if (_state->_originalTextures.isEmpty()) {
+        _state->_originalTextures = getTextures();
+    }
+}
+
+QVariantMap NetworkMaterial::getTextures() const {
+    QVariantMap textures;
+    for (const auto& texture : _textures) {
+        if (texture.texture) {
+            textures[texture.name] = texture.texture->getURL();
+        }
+    }
+    return textures;
+}
+
+void Geometry::releaseTextures() {
+    for (auto& material : _materials) {
+        material->releaseTextures();
+    }
+}
+
+void Geometry::resetTextures() {
+    for (auto& material : _materials) {
+        material->resetTextures();
+    }
+}
+
+void NetworkMaterial::releaseTextures() {
+    for (auto& texture : _textures) {
+        texture.texture.reset();
+    }
+    releaseTextureMaps();
+}
+
+void NetworkMaterial::resetTextures() {
+    setTextures(_state->_originalTextures);
 }
 
 #include "ModelCache.moc"

@@ -298,6 +298,11 @@ public:
     // conversion from legacy material properties to PBR equivalent
     static float shininessToRoughness(float shininess) { return 1.0f - shininess / 100.0f; }
 
+protected:
+    // Textures should not be held while cached; that is for the TextureCache.
+    // This allows NetworkMaterials to release their textures.
+    void releaseTextureMaps();
+
 private:
     mutable MaterialKey _key;
     mutable UniformBufferView _schemaBuffer;
