@@ -97,7 +97,7 @@ public:
                     bool showCollisionHull = false);
     void removeFromScene(std::shared_ptr<render::Scene> scene, render::PendingChanges& pendingChanges);
     void renderSetup(RenderArgs* args);
-    bool isRenderable() const { return !_meshStates.isEmpty() || (isActive() && !getGeometry()->getMeshes().isEmpty()); }
+    bool isRenderable() const { return !_meshStates.isEmpty() || (isActive() && getGeometry()->getMeshes().isEmpty()); }
 
     bool isVisible() const { return _isVisible; }
 

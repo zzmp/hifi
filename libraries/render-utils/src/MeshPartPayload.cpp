@@ -385,7 +385,7 @@ ShapeKey ModelMeshPartPayload::getShapeKey() const {
 
     // if our index is ever out of range for either meshes or networkMeshes, then skip it, and set our _meshGroupsKnown
     // to false to rebuild out mesh groups.
-    if (_meshIndex < 0 || _meshIndex >= (int)meshes.size()) {
+    if (_meshIndex < 0 || _meshIndex >= (int)meshes.size() || _meshIndex > meshes.size()) {
         _model->_meshGroupsKnown = false; // regenerate these lists next time around.
         _model->_readyWhenAdded = false; // in case any of our users are using scenes
         _model->invalidCalculatedMeshBoxes(); // if we have to reload, we need to assume our mesh boxes are all invalid
