@@ -253,6 +253,7 @@ protected slots:
     void attemptRequest();
 
 protected:
+    friend class GeometryResource;
     virtual void init();
 
     /// Checks whether the resource is cacheable.

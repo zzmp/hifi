@@ -30,6 +30,7 @@ using NetworkMeshes = FBXMeshes;
 class NetworkMaterial;
 class NetworkTexture;
 class NetworkGeometry;
+class GeometryResource;
 class GeometryMappingResource;
 
 /// Stores cached model geometries.
@@ -57,12 +58,13 @@ private:
 /// Materials include rendering hints (in the key) and textures.
 class NetworkMaterial : public model::Material {
 public:
-    NetworkMaterial(const FBXMaterial&& material, const QUrl& textureBaseUrl);
+    NetworkMaterial(const FBXMaterial&& material, GeometryResource* geometry);
 
     QVariantMap getTextures() const;
 
 protected:
     friend class Geometry;
+    friend class GeometryResource;
 
     using MapChannel = model::Material::MapChannel;
 
@@ -88,10 +90,13 @@ protected:
 private:
     // Helpers
     QUrl getTextureUrl(const QUrl& baseUrl, const FBXTexture& fbxTexture);
-    model::TextureMapPointer fetchTextureMap(const QUrl& baseUrl, const FBXTexture& fbxTexture,
-        TextureType type, MapChannel channel);
+    model::TextureMapPointer fetchTextureMap(const QUrl& url, TextureType type, MapChannel channel,
+        GeometryResource* geometry, const FBXTexture& fbxTexture);
     model::TextureMapPointer fetchTextureMap(const QUrl& url, TextureType type, MapChannel channel);
-    void setTexture(const QVariantMap& textureMap, const QString& textureName, TextureType type, MapChannel channel, bool useAlpha = false);
+    void setTexture(TextureType type, MapChannel channel,
+        GeometryResource* geometry, const FBXTexture& fbxTexture);
+    void setTexture(TextureType type, MapChannel channel,
+        const QVariantMap& textureMap, const QString& textureName, bool useAlpha = false);
 
     bool _isCached{ true };
     std::shared_ptr<QVariantMap> _originalTextures;
@@ -140,34 +145,42 @@ protected:
     // Copied to each geometry, mutable throughout lifetime via setTextures
     NetworkMaterials _materials;
 
-    // Textures should not be held while cached; that is for the TextureCache, not the ModelCache.
-    void releaseTextures();
-    void resetTextures();
-
-private:
     mutable bool _areTexturesLoaded { false };
 };
 
 /// A geometry loaded from the network.
 class GeometryResource : public Resource, public Geometry {
+    Q_OBJECT
 public:
     using Pointer = QSharedPointer<GeometryResource>;
 
     GeometryResource(const QUrl& url, const QUrl& textureBaseUrl = QUrl()) :
         Resource(url), _textureBaseUrl(textureBaseUrl) {}
+    virtual ~GeometryResource();
 
-    virtual bool areTexturesLoaded() const { return isLoaded() && Geometry::areTexturesLoaded(); }
+    virtual bool areTexturesLoaded() const override { return isLoaded() && Geometry::areTexturesLoaded(); }
 
     virtual void deleter() override;
+
+protected slots:
+    void makeStale();
 
 protected:
     friend class ModelCache;
     friend class GeometryMappingResource;
+    friend class NetworkMaterial;
+
+    // Textures should not be held while cached; that is for the TextureCache, not the ModelCache.
+    void releaseTextures();
+    void resetTextures();
+
+    virtual bool isCacheable() const override { return areTexturesLoaded() && _isCacheable && !_isStale; }
 
     QUrl _textureBaseUrl;
+    bool _isCacheable{ true };
 
-    virtual bool isCacheable() const override { return _loaded && _isCacheable; }
-    bool _isCacheable { true };
+    std::vector<QUrl> _inlinedTextures;
+    std::atomic<bool> _isStale{ false };
 };
 
 class NetworkGeometry : public QObject {

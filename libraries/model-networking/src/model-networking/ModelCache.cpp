@@ -72,7 +72,7 @@ void GeometryMappingResource::downloadFinished(const QByteArray& data) {
 
         // Get the raw GeometryResource, not the wrapped NetworkGeometry
         _geometryResource = modelCache->getResource(url, QUrl(), false, &extra).staticCast<GeometryResource>();
-        // Avoid caching nested resources - their references will be held by the parent
+        // Avoid caching the nested resource - its reference will be held by the parent
         _geometryResource->_isCacheable = false;
 
         if (_geometryResource->isLoaded()) {
@@ -90,11 +90,21 @@ void GeometryMappingResource::downloadFinished(const QByteArray& data) {
 
 void GeometryMappingResource::onGeometryMappingLoaded(bool success) {
     if (success && _geometryResource) {
+        // Copy over the geometry
         _joints = _geometryResource->_joints;
         _sittingPoints = _geometryResource->_sittingPoints;
         _shapes = _geometryResource->_shapes;
         _meshes = _geometryResource->_meshes;
         _materials = _geometryResource->_materials;
+
+        // Swap the inlinedTextures, to prevent purging them on the _geometryResource dtor
+        _inlinedTextures.swap(_geometryResource->_inlinedTextures);
+        // Connect the inlinedTextures to this resource
+        auto textureCache = DependencyManager::get<TextureCache>();
+        for (const QUrl& textureUrl : _inlinedTextures) {
+            auto texture = textureCache->getTexture(textureUrl);
+            QObject::connect(texture.data(), &QObject::destroyed, this, &GeometryResource::makeStale);
+        }
 
         // Avoid holding onto extra references
         _geometryResource.reset();
@@ -208,7 +218,7 @@ void GeometryDefinitionResource::setGeometryDefinition(FBXGeometry::Pointer geom
     QHash<QString, size_t> materialIDAtlas;
     for (FBXMaterial& material : geometry->materials) {
         materialIDAtlas[material.materialID] = _materials.size();
-        _materials.push_back(std::make_shared<NetworkMaterial>(std::move(material), _textureBaseUrl));
+        _materials.push_back(std::make_shared<NetworkMaterial>(std::move(material), this));
     }
 
     // Use an intermediate object because _shapes is const.
@@ -254,6 +264,17 @@ std::shared_ptr<NetworkGeometry> ModelCache::getGeometry(const QUrl& url, const 
     if (resource) {
         if (resource->isLoaded()) {
             resource->resetTextures();
+            // Check that no textures were freed during retrieval
+            if (resource->_isStale) {
+                qDebug() << "Requested model" << url << "is stale, reloading";
+
+                // If any inlined textures are freed, the entire model must be reloaded
+                resource->_isCacheable = false;
+                resource.reset();
+                purgeResource(url);
+
+                return getGeometry(url, mapping, textureBaseUrl);
+            }
         }
         return std::make_shared<NetworkGeometry>(resource);
     } else {
@@ -331,13 +352,48 @@ std::shared_ptr<const NetworkMaterial> Geometry::getShapeMaterial(int shapeID) c
     return nullptr;
 }
 
+GeometryResource::~GeometryResource() {
+    if (!_inlinedTextures.empty()) {
+        _isStale = true;
+
+        // incidentally releases all textures, but necessary for purge to work
+        releaseTextures();
+
+        // Purge inlined textures from the TextureCache when freed, as
+        // they'll need to be reloaded from the model, so they are just squatting on memory
+        auto textureCache = DependencyManager::get<TextureCache>();
+        for (const QUrl& texture : _inlinedTextures) {
+            textureCache->purgeResource(texture);
+        }
+    }
+}
+
 void GeometryResource::deleter() {
-    // Explicitly release textures before being put in the cache
     if (isCacheable()) {
+        // Explicitly release textures before being put in the cache
         releaseTextures();
     }
 
     Resource::deleter();
+}
+
+void GeometryResource::makeStale() {
+    if (!isCacheable()) {
+        _isStale = true;
+    }
+    if (!_isStale) {
+        _isStale = true;
+        qDebug() << sender();
+        qDebug() << static_cast<Resource*>(sender())->getURL();
+        // Signal is sent from base dtor, so I need to add a log to the virtual dtor to check this,
+        // keying on the URL: file:///C:/Users/User/Code/hifi/build/interface/Debug/resources/meshes/being_of_light/source/Being_of_Light.fbm/BaseMesh_BeingofLight_DiffuseMap.png
+        // qDebug() << static_cast<Resource*>(sender())->isCacheable();
+        qCDebug(modelnetworking) << "model" << getURL() << "has gone stale";
+
+        if (_cache) {
+            _cache->purgeResource(getURL());
+        }
+    }
 }
 
 NetworkGeometry::NetworkGeometry(const GeometryResource::Pointer& geometry) : _resource(geometry) {
@@ -379,11 +435,15 @@ QUrl NetworkMaterial::getTextureUrl(const QUrl& url, const FBXTexture& texture) 
     return baseUrl.resolved(QUrl(texture.filename));
 }
 
-model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& baseUrl, const FBXTexture& fbxTexture,
-                                                        TextureType type, MapChannel channel) {
-    const auto url = getTextureUrl(baseUrl, fbxTexture);
+model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url, TextureType type, MapChannel channel,
+    GeometryResource* geometry, const FBXTexture& fbxTexture) {
     const auto texture = DependencyManager::get<TextureCache>()->getTexture(url, type, fbxTexture.content);
     _textures[channel] = Texture { fbxTexture.name, texture };
+
+    if (!fbxTexture.content.isEmpty()) {
+        geometry->_inlinedTextures.push_back(url);
+        QObject::connect(texture.data(), &QObject::destroyed, geometry, &GeometryResource::makeStale);
+    }
 
     auto map = std::make_shared<model::TextureMap>();
     map->setTextureSource(texture->_textureSource);
@@ -399,67 +459,16 @@ model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url, Textu
     return map;
 }
 
-NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, const QUrl& textureBaseUrl) :
-    model::Material(*material._material) {
-    // Store state
-    _textures = std::vector<Texture>(MapChannel::NUM_MAP_CHANNELS);
-    _originalTextures = std::make_shared<QVariantMap>(getTextures());
+void NetworkMaterial::setTexture(TextureType type, MapChannel channel, GeometryResource* geometry, const FBXTexture& fbxTexture) {
+    assert(geometry);
 
-    // Set the textures
-    if (!material.albedoTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.albedoTexture, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
+    const auto url = getTextureUrl(geometry->_textureBaseUrl, fbxTexture);
+    auto map = fetchTextureMap(url, type, channel, geometry, fbxTexture);
 
-        // Determine transparency
-        if (!material.opacityTexture.filename.isEmpty()) {
-            if (material.albedoTexture.filename == material.opacityTexture.filename) {
-                // TODO: Different albedo/opacity maps are not currently supported
-                _originalAlpha = true; // store state
-                map->setUseAlphaChannel(true);
-            }
-        }
-
-        setTextureMap(MapChannel::ALBEDO_MAP, map);
-    }
-
-    if (!material.normalTexture.filename.isEmpty()) {
-        auto type = (material.normalTexture.isBumpmap ? BUMP_TEXTURE : NORMAL_TEXTURE);
-        auto map = fetchTextureMap(textureBaseUrl, material.normalTexture, type, MapChannel::NORMAL_MAP);
-        setTextureMap(MapChannel::NORMAL_MAP, map);
-    }
-
-    if (!material.roughnessTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.roughnessTexture, ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP);
-        setTextureMap(MapChannel::ROUGHNESS_MAP, map);
-    } else if (!material.glossTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.glossTexture, GLOSS_TEXTURE, MapChannel::ROUGHNESS_MAP);
-        setTextureMap(MapChannel::ROUGHNESS_MAP, map);
-    }
-
-    if (!material.metallicTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.metallicTexture, METALLIC_TEXTURE, MapChannel::METALLIC_MAP);
-        setTextureMap(MapChannel::METALLIC_MAP, map);
-    } else if (!material.specularTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.specularTexture, SPECULAR_TEXTURE, MapChannel::METALLIC_MAP);
-        setTextureMap(MapChannel::METALLIC_MAP, map);
-    }
-
-    if (!material.occlusionTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.occlusionTexture, OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP);
-        setTextureMap(MapChannel::OCCLUSION_MAP, map);
-    }
-
-    if (!material.emissiveTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.emissiveTexture, EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP);
-        setTextureMap(MapChannel::EMISSIVE_MAP, map);
-    }
-
-    if (!material.lightmapTexture.filename.isEmpty()) {
-        auto map = fetchTextureMap(textureBaseUrl, material.lightmapTexture, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
-        setTextureMap(MapChannel::LIGHTMAP_MAP, map);
-    }
+    setTextureMap(channel, map);
 }
 
-void NetworkMaterial::setTexture(const QVariantMap& textureMap, const QString& textureName, TextureType type, MapChannel channel, bool useAlpha) {
+void NetworkMaterial::setTexture(TextureType type, MapChannel channel, const QVariantMap& textureMap, const QString& textureName, bool useAlpha) {
     if (!textureName.isEmpty()) {
         auto url = textureMap.contains(textureName) ? textureMap[textureName].toUrl() : QUrl();
         auto map = fetchTextureMap(url, type, channel);
@@ -468,6 +477,59 @@ void NetworkMaterial::setTexture(const QVariantMap& textureMap, const QString& t
             map->setUseAlphaChannel(useAlpha);
         }
         setTextureMap(channel, map);
+    }
+}
+
+NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, GeometryResource* geometry) :
+    model::Material(*material._material) {
+    assert(geometry);
+
+    // Store state
+    _textures = std::vector<Texture>(MapChannel::NUM_MAP_CHANNELS);
+    _originalTextures = std::make_shared<QVariantMap>(getTextures());
+
+    // Set the textures
+    if (!material.albedoTexture.filename.isEmpty()) {
+        setTexture(ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP, geometry, material.albedoTexture);
+
+        // Determine transparency
+        if (!material.opacityTexture.filename.isEmpty()) {
+            if (material.albedoTexture.filename == material.opacityTexture.filename) {
+                // TODO: Different albedo/opacity maps are not currently supported
+                _originalAlpha = true; // store state
+                getTextureMap(MapChannel::ALBEDO_MAP)->setUseAlphaChannel(true);
+                resetOpacityMap();
+            }
+        }
+    }
+
+    if (!material.normalTexture.filename.isEmpty()) {
+        auto type = (material.normalTexture.isBumpmap ? BUMP_TEXTURE : NORMAL_TEXTURE);
+        setTexture(type, MapChannel::NORMAL_MAP, geometry, material.normalTexture);
+    }
+
+    if (!material.roughnessTexture.filename.isEmpty()) {
+        setTexture(ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP, geometry, material.roughnessTexture);
+    } else if (!material.glossTexture.filename.isEmpty()) {
+        setTexture(GLOSS_TEXTURE, MapChannel::ROUGHNESS_MAP, geometry, material.glossTexture);
+    }
+
+    if (!material.metallicTexture.filename.isEmpty()) {
+        setTexture(METALLIC_TEXTURE, MapChannel::METALLIC_MAP, geometry, material.metallicTexture);
+    } else if (!material.specularTexture.filename.isEmpty()) {
+        setTexture(SPECULAR_TEXTURE, MapChannel::METALLIC_MAP, geometry, material.specularTexture);
+    }
+
+    if (!material.occlusionTexture.filename.isEmpty()) {
+        setTexture(OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP, geometry, material.occlusionTexture);
+    }
+
+    if (!material.emissiveTexture.filename.isEmpty()) {
+        setTexture(EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP, geometry, material.emissiveTexture);
+    }
+
+    if (!material.lightmapTexture.filename.isEmpty()) {
+        setTexture(LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP, geometry, material.lightmapTexture);
     }
 }
 
@@ -480,14 +542,14 @@ void NetworkMaterial::setTextures(const QVariantMap& textureMap, bool useAlpha) 
     const auto& emissiveName = getTextureName(MapChannel::EMISSIVE_MAP);
     const auto& lightmapName = getTextureName(MapChannel::LIGHTMAP_MAP);
 
-    setTexture(textureMap, albedoName, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP, useAlpha);
-    setTexture(textureMap, normalName, NORMAL_TEXTURE, MapChannel::NORMAL_MAP);
-    setTexture(textureMap, roughnessName, ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP);
+    setTexture(ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP, textureMap, albedoName, useAlpha);
+    setTexture(NORMAL_TEXTURE, MapChannel::NORMAL_MAP, textureMap, normalName);
+    setTexture(ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP, textureMap, roughnessName);
     // FIXME: If passing a specular map instead of a metallic how do we know?
-    setTexture(textureMap, metallicName, METALLIC_TEXTURE, MapChannel::METALLIC_MAP);
-    setTexture(textureMap, occlusionName, OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP);
-    setTexture(textureMap, emissiveName, EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP);
-    setTexture(textureMap, lightmapName, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
+    setTexture(METALLIC_TEXTURE, MapChannel::METALLIC_MAP, textureMap, metallicName);
+    setTexture(OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP, textureMap, occlusionName);
+    setTexture(EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP, textureMap, emissiveName);
+    setTexture(LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP, textureMap, lightmapName);
 }
 
 QVariantMap NetworkMaterial::getTextures() const {
@@ -500,21 +562,21 @@ QVariantMap NetworkMaterial::getTextures() const {
     return textures;
 }
 
-void Geometry::releaseTextures() {
+void GeometryResource::releaseTextures() {
     for (auto& material : _materials) {
         material->releaseTextures();
     }
 }
 
-void Geometry::resetTextures() {
+void GeometryResource::resetTextures() {
     for (auto& material : _materials) {
         material->resetTextures();
     }
 }
 
 void NetworkMaterial::releaseTextures() {
-    for (auto& texture : _textures) {
-        texture.texture.reset();
+    for (auto& metaTexture : _textures) {
+        metaTexture.texture.reset();
     }
     releaseTextureMaps();
 }
