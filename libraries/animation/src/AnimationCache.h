@@ -55,8 +55,8 @@ public:
 
     virtual bool isLoaded() const override;
 
-    const FBXJoints& getJoints() const { return *_joints; }
-    const FBXAnimationFrames& getFramesReference() const { return *_animationFrames; }
+    const FBXJoints& getJoints() const;
+    const FBXAnimationFrames& getFramesReference() const;
     
     Q_INVOKABLE QStringList getJointNames() const;
     Q_INVOKABLE FBXAnimationFrames getFrames() const;

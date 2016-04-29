@@ -86,6 +86,14 @@ bool Animation::isLoaded() const {
     return _loaded && _joints && _animationFrames;
 }
 
+const FBXJoints& Animation::getJoints() const {
+    return *_joints;
+}
+
+const FBXAnimationFrames& Animation::getFramesReference() const {
+    return *_animationFrames;
+}
+
 QStringList Animation::getJointNames() const {
     if (QThread::currentThread() != thread()) {
         QStringList result;
