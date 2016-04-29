@@ -111,6 +111,11 @@ public:
     ResourceCache(QObject* parent = nullptr);
     virtual ~ResourceCache();
     
+    /// Purge a resource. Returns true if the resource has been purged (or not in the cache).
+    /// If the resource is active, this is a nop, and will return false,
+    /// Otherwise, it will be deleted.
+    bool purgeResource(const QUrl& url);
+
     void refreshAll();
     void refresh(const QUrl& url);
 

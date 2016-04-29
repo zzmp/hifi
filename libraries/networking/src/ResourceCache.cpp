@@ -282,6 +282,41 @@ QSharedPointer<Resource> ResourceCache::getResource(const QUrl& url, const QUrl&
     return resource;
 }
 
+bool ResourceCache::purgeResource(const QUrl& url) {
+    QSharedPointer<Resource> resource;
+    {
+        QReadLocker locker(&_resourcesLock);
+        resource = _resources.value(url).lock();
+    }
+
+    if (resource) {
+        QWriteLocker locker(&_unusedResourcesLock);
+        auto it = _unusedResources.find(resource->getLRUKey());
+        if (it != _unusedResources.end()) {
+
+            resource->setCache(nullptr);
+            auto size = resource->getBytes();
+            resource.reset();
+
+            removeResource(url, size);
+
+            _unusedResourcesSize -= size;
+            _unusedResources.erase(it);
+
+            resetResourceCounters();
+
+            // Purged
+            return true;
+        }
+    } else {
+        // Not in the cache
+        return true;
+    }
+
+    // Failed to purge
+    return false;
+}
+
 void ResourceCache::setUnusedResourceCacheSize(qint64 unusedResourcesMaxSize) {
     _unusedResourcesMaxSize = clamp(unusedResourcesMaxSize, MIN_UNUSED_MAX_SIZE, MAX_UNUSED_MAX_SIZE);
     reserveUnusedResource(0);
