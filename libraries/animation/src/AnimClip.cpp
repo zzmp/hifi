@@ -119,7 +119,7 @@ void AnimClip::copyFromNetworkAnim() {
 
     for (int frame = 0; frame < frameCount; frame++) {
 
-        const auto& fbxAnimFrame = animationFrames[frame];
+        const auto& animFrame = animationFrames[frame];
 
         // init all joints in animation to default pose
         // this will give us a resonable result for bones in the model skeleton but not in the animation.
@@ -131,8 +131,8 @@ void AnimClip::copyFromNetworkAnim() {
         for (int animJoint = 0; animJoint < animJointCount; animJoint++) {
             int skeletonJoint = jointMap[animJoint];
 
-            const glm::vec3& fbxAnimTrans = fbxAnimFrame.translations[animJoint];
-            const glm::quat& fbxAnimRot = fbxAnimFrame.rotations[animJoint];
+            const glm::vec3& animTrans = animFrame.translations[animJoint];
+            const glm::quat& animRot = animFrame.rotations[animJoint];
 
             // skip joints that are in the animation but not in the skeleton.
             if (skeletonJoint >= 0 && skeletonJoint < skeletonJointCount) {
@@ -151,19 +151,19 @@ void AnimClip::copyFromNetworkAnim() {
                 preRot.scale = glm::vec3(1.0f);
                 postRot.scale = glm::vec3(1.0f);
 
-                AnimPose rot(glm::vec3(1.0f), fbxAnimRot, glm::vec3());
+                AnimPose rot(glm::vec3(1.0f), animRot, glm::vec3());
 
                 // adjust translation offsets, so large translation animatons on the reference skeleton
                 // will be adjusted when played on a skeleton with short limbs.
-                const glm::vec3& fbxZeroTrans = animationFrames[0].translations[animJoint];
+                const glm::vec3& zeroTrans = animationFrames[0].translations[animJoint];
                 const AnimPose& relDefaultPose = _skeleton->getRelativeDefaultPose(skeletonJoint);
                 float boneLengthScale = 1.0f;
                 const float EPSILON = 0.0001f;
-                if (fabsf(glm::length(fbxZeroTrans)) > EPSILON) {
-                    boneLengthScale = glm::length(relDefaultPose.trans) / glm::length(fbxZeroTrans);
+                if (fabsf(glm::length(zeroTrans)) > EPSILON) {
+                    boneLengthScale = glm::length(relDefaultPose.trans) / glm::length(zeroTrans);
                 }
 
-                AnimPose trans = AnimPose(glm::vec3(1.0f), glm::quat(), relDefaultPose.trans + boneLengthScale * (fbxAnimTrans - fbxZeroTrans));
+                AnimPose trans = AnimPose(glm::vec3(1.0f), glm::quat(), relDefaultPose.trans + boneLengthScale * (animTrans - zeroTrans));
 
                 _anim[frame][skeletonJoint] = trans * preRot * rot * postRot;
             }
