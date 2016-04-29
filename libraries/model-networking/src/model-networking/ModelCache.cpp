@@ -276,7 +276,7 @@ const QVariantMap Geometry::getTextures() const {
 void Geometry::setTextures(const QVariantMap& textureMap) {
     if (_meshes->size() > 0) {
         for (auto& material : _materials) {
-            // Check if any material textures actually changed
+            // Check if any material textures match the textureMap
             if (std::any_of(material->_textures.cbegin(), material->_textures.cend(),
                 [&textureMap](const std::vector<NetworkMaterial::Texture>::value_type& it) { return it.texture && textureMap.contains(it.name); })) { 
 
@@ -286,7 +286,8 @@ void Geometry::setTextures(const QVariantMap& textureMap) {
                     material->_isCached = false;
                 }
 
-                material->setTextures(textureMap);
+                // Changed textures' albedo uses alpha (transparency)
+                material->setTextures(textureMap, true);
                 _areTexturesLoaded = false;
 
                 // If we only use cached textures, they should all be loaded, so we should check
@@ -399,25 +400,26 @@ model::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url, Textu
 }
 
 NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, const QUrl& textureBaseUrl) :
-    model::Material(*material._material),
-    _state{ std::make_shared<State>() } {
+    model::Material(*material._material) {
+    // Store state
     _textures = std::vector<Texture>(MapChannel::NUM_MAP_CHANNELS);
+    _originalTextures = std::make_shared<QVariantMap>(getTextures());
+
+    // Set the textures
     if (!material.albedoTexture.filename.isEmpty()) {
         auto map = fetchTextureMap(textureBaseUrl, material.albedoTexture, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
-        _state->_albedoTransform = material.albedoTexture.transform;
-        map->setTextureTransform(_state->_albedoTransform);
 
+        // Determine transparency
         if (!material.opacityTexture.filename.isEmpty()) {
             if (material.albedoTexture.filename == material.opacityTexture.filename) {
-                // Best case scenario, just indicating that the albedo map contains transparency
                 // TODO: Different albedo/opacity maps are not currently supported
+                _originalAlpha = true; // store state
                 map->setUseAlphaChannel(true);
             }
         }
 
         setTextureMap(MapChannel::ALBEDO_MAP, map);
     }
-
 
     if (!material.normalTexture.filename.isEmpty()) {
         auto type = (material.normalTexture.isBumpmap ? BUMP_TEXTURE : NORMAL_TEXTURE);
@@ -453,15 +455,23 @@ NetworkMaterial::NetworkMaterial(const FBXMaterial&& material, const QUrl& textu
 
     if (!material.lightmapTexture.filename.isEmpty()) {
         auto map = fetchTextureMap(textureBaseUrl, material.lightmapTexture, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
-        _state->_lightmapTransform = material.lightmapTexture.transform;
-        _state->_lightmapParams = material.lightmapParams;
-        map->setTextureTransform(_state->_lightmapTransform);
-        map->setLightmapOffsetScale(_state->_lightmapParams.x, _state->_lightmapParams.y);
         setTextureMap(MapChannel::LIGHTMAP_MAP, map);
     }
 }
 
-void NetworkMaterial::setTextures(const QVariantMap& textureMap) {
+void NetworkMaterial::setTexture(const QVariantMap& textureMap, const QString& textureName, TextureType type, MapChannel channel, bool useAlpha) {
+    if (!textureName.isEmpty()) {
+        auto url = textureMap.contains(textureName) ? textureMap[textureName].toUrl() : QUrl();
+        auto map = fetchTextureMap(url, type, channel);
+        if (useAlpha) {
+            assert(type == ALBEDO_TEXTURE);
+            map->setUseAlphaChannel(useAlpha);
+        }
+        setTextureMap(channel, map);
+    }
+}
+
+void NetworkMaterial::setTextures(const QVariantMap& textureMap, bool useAlpha) {
     const auto& albedoName = getTextureName(MapChannel::ALBEDO_MAP);
     const auto& normalName = getTextureName(MapChannel::NORMAL_MAP);
     const auto& roughnessName = getTextureName(MapChannel::ROUGHNESS_MAP);
@@ -470,58 +480,14 @@ void NetworkMaterial::setTextures(const QVariantMap& textureMap) {
     const auto& emissiveName = getTextureName(MapChannel::EMISSIVE_MAP);
     const auto& lightmapName = getTextureName(MapChannel::LIGHTMAP_MAP);
 
-    if (!albedoName.isEmpty()) {
-        auto url = textureMap.contains(albedoName) ? textureMap[albedoName].toUrl() : QUrl();
-        auto map = fetchTextureMap(url, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP);
-        map->setTextureTransform(_state->_albedoTransform);
-        // when reassigning the albedo texture we also check for the alpha channel used as opacity
-        map->setUseAlphaChannel(true);
-        setTextureMap(MapChannel::ALBEDO_MAP, map);
-    }
-
-    if (!normalName.isEmpty()) {
-        auto url = textureMap.contains(normalName) ? textureMap[normalName].toUrl() : QUrl();
-        auto map = fetchTextureMap(url, NORMAL_TEXTURE, MapChannel::NORMAL_MAP);
-        setTextureMap(MapChannel::NORMAL_MAP, map);
-    }
-
-    if (!roughnessName.isEmpty()) {
-        auto url = textureMap.contains(roughnessName) ? textureMap[roughnessName].toUrl() : QUrl();
-        // FIXME: If passing a gloss map instead of a roughmap how do we know?
-        auto map = fetchTextureMap(url, ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP);
-        setTextureMap(MapChannel::ROUGHNESS_MAP, map);
-    }
-
-    if (!metallicName.isEmpty()) {
-        auto url = textureMap.contains(metallicName) ? textureMap[metallicName].toUrl() : QUrl();
-        // FIXME: If passing a specular map instead of a metallic how do we know?
-        auto map = fetchTextureMap(url, METALLIC_TEXTURE, MapChannel::METALLIC_MAP);
-        setTextureMap(MapChannel::METALLIC_MAP, map);
-    }
-
-    if (!occlusionName.isEmpty()) {
-        auto url = textureMap.contains(occlusionName) ? textureMap[occlusionName].toUrl() : QUrl();
-        auto map = fetchTextureMap(url, OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP);
-        setTextureMap(MapChannel::OCCLUSION_MAP, map);
-    }
-
-    if (!emissiveName.isEmpty()) {
-        auto url = textureMap.contains(emissiveName) ? textureMap[emissiveName].toUrl() : QUrl();
-        auto map = fetchTextureMap(url, EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP);
-        setTextureMap(MapChannel::EMISSIVE_MAP, map);
-    }
-
-    if (!lightmapName.isEmpty()) {
-        auto url = textureMap.contains(lightmapName) ? textureMap[lightmapName].toUrl() : QUrl();
-        auto map = fetchTextureMap(url, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
-        map->setTextureTransform(_state->_lightmapTransform);
-        map->setLightmapOffsetScale(_state->_lightmapParams.x, _state->_lightmapParams.y);
-        setTextureMap(MapChannel::LIGHTMAP_MAP, map);
-    }
-
-    if (_state->_originalTextures.isEmpty()) {
-        _state->_originalTextures = getTextures();
-    }
+    setTexture(textureMap, albedoName, ALBEDO_TEXTURE, MapChannel::ALBEDO_MAP, useAlpha);
+    setTexture(textureMap, normalName, NORMAL_TEXTURE, MapChannel::NORMAL_MAP);
+    setTexture(textureMap, roughnessName, ROUGHNESS_TEXTURE, MapChannel::ROUGHNESS_MAP);
+    // FIXME: If passing a specular map instead of a metallic how do we know?
+    setTexture(textureMap, metallicName, METALLIC_TEXTURE, MapChannel::METALLIC_MAP);
+    setTexture(textureMap, occlusionName, OCCLUSION_TEXTURE, MapChannel::OCCLUSION_MAP);
+    setTexture(textureMap, emissiveName, EMISSIVE_TEXTURE, MapChannel::EMISSIVE_MAP);
+    setTexture(textureMap, lightmapName, LIGHTMAP_TEXTURE, MapChannel::LIGHTMAP_MAP);
 }
 
 QVariantMap NetworkMaterial::getTextures() const {
@@ -554,7 +520,7 @@ void NetworkMaterial::releaseTextures() {
 }
 
 void NetworkMaterial::resetTextures() {
-    setTextures(_state->_originalTextures);
+    setTextures(*_originalTextures, _originalAlpha);
 }
 
 #include "ModelCache.moc"

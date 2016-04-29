@@ -66,7 +66,7 @@ protected:
 
     using MapChannel = model::Material::MapChannel;
 
-    void setTextures(const QVariantMap& textureMap);
+    void setTextures(const QVariantMap& textureMap, bool useAlpha = true);
 
     static const QString NO_TEXTURE;
     const QString& getTextureName(MapChannel channel);
@@ -86,23 +86,16 @@ protected:
     std::vector<Texture> _textures;
 
 private:
-    // Helpers for the ctors
+    // Helpers
     QUrl getTextureUrl(const QUrl& baseUrl, const FBXTexture& fbxTexture);
     model::TextureMapPointer fetchTextureMap(const QUrl& baseUrl, const FBXTexture& fbxTexture,
         TextureType type, MapChannel channel);
     model::TextureMapPointer fetchTextureMap(const QUrl& url, TextureType type, MapChannel channel);
+    void setTexture(const QVariantMap& textureMap, const QString& textureName, TextureType type, MapChannel channel, bool useAlpha = false);
 
-    // State to keep between all instances
-    class State {
-    public:
-        QVariantMap _originalTextures;
-        Transform _albedoTransform;
-        Transform _lightmapTransform;
-        vec2 _lightmapParams;
-    };
-    std::shared_ptr<State> _state;
-
-    bool _isCached { true };
+    bool _isCached{ true };
+    std::shared_ptr<QVariantMap> _originalTextures;
+    bool _originalAlpha{ false };
 };
 
 
