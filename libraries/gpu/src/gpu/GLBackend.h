@@ -11,6 +11,15 @@
 #ifndef hifi_gpu_GLBackend_h
 #define hifi_gpu_GLBackend_h
 
+// Core 41 doesn't expose the features to really separate the vertex format from the vertex buffers binding
+// Core 43 does :)
+#if(GPU_INPUT_PROFILE == GPU_CORE_41)
+#define NO_SUPPORT_VERTEX_ATTRIB_FORMAT
+#else
+#define SUPPORT_VERTEX_ATTRIB_FORMAT
+#endif
+
+
 #include <assert.h>
 #include <functional>
 #include <bitset>
@@ -193,6 +202,15 @@ public:
     // very specific for now
     static void syncSampler(const Sampler& sampler, Texture::Type type, const GLTexture* object);
 
+    class GLInputFormat : public GPUObject {
+    public:
+        std::string key;
+
+        GLInputFormat();
+        ~GLInputFormat();
+    };
+    GLInputFormat* syncGPUObject(const Stream::Format& inputFormat);
+
     class GLShader : public GPUObject {
     public:
         enum Version {
@@ -325,7 +343,8 @@ public:
 
 
     static const int MAX_NUM_ATTRIBUTES = Stream::NUM_INPUT_SLOTS;
-    static const int MAX_NUM_INPUT_BUFFERS = 16;
+    // The drawcall Info attribute  channel is reserved and is the upper bound for the number of availables Input buffers
+    static const int MAX_NUM_INPUT_BUFFERS = Stream::DRAW_CALL_INFO;
 
     size_t getNumInputBuffers() const { return _input._invalidBuffers.size(); }
 
@@ -397,12 +416,14 @@ protected:
     struct InputStageState {
         bool _invalidFormat = true;
         Stream::FormatPointer _format;
+        std::string _formatKey;
 
         typedef std::bitset<MAX_NUM_ATTRIBUTES> ActivationCache;
         ActivationCache _attributeActivation;
 
         typedef std::bitset<MAX_NUM_INPUT_BUFFERS> BuffersState;
-        BuffersState _invalidBuffers;
+        BuffersState _invalidBuffers{ 0 };
+        BuffersState _attribBindingBuffers{ 0 };
 
         Buffers _buffers;
         Offsets _bufferOffsets;
@@ -420,12 +441,12 @@ protected:
         Offset _indirectBufferStride{ 0 };
 
         GLuint _defaultVAO;
-
+        
         InputStageState() :
             _invalidFormat(true),
             _format(0),
+            _formatKey(),
             _attributeActivation(0),
-            _invalidBuffers(0),
             _buffers(_invalidBuffers.size(), BufferPointer(0)),
             _bufferOffsets(_invalidBuffers.size(), 0),
             _bufferStrides(_invalidBuffers.size(), 0),
@@ -472,6 +493,8 @@ protected:
         bool _invalidView { false };
         bool _invalidProj { false };
         bool _invalidViewport { false };
+
+        bool _enabledDrawcallInfoBuffer{ false };
 
         using Pair = std::pair<size_t, size_t>;
         using List = std::list<Pair>;
