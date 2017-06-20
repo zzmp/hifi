@@ -122,7 +122,7 @@ Rectangle {
                     width: parent.width;
 
                     AudioControls.CheckBox {
-                        Layout.maximumWidth: parent.width - level.width - 40;
+                        Layout.maximumWidth: parent.width - inputLevel.width - 40;
                         text: display;
                         wrap: false;
                         checked: selected;
@@ -132,10 +132,10 @@ Rectangle {
                         }
                     }
                     InputLevel {
-                        id: level;
+                        id: inputLevel;
+                        level: model.level;
                         Layout.alignment: Qt.AlignRight;
                         Layout.rightMargin: 30;
-                        visible: selected;
                     }
                 }
             }

@@ -15,7 +15,7 @@ import QtQuick.Layouts 1.3
 import QtGraphicalEffects 1.0
 
 Rectangle {
-    readonly property var level: Audio.inputLevel;
+    property var level;
 
     width: 70;
     height: 8;
