@@ -227,6 +227,7 @@ signals:
 
     void deviceChanged(QAudio::Mode mode, const QAudioDeviceInfo& device);
     void devicesChanged(QAudio::Mode mode, const QList<QAudioDeviceInfo>& devices);
+    void devicesLoudnessChanged(const QList<float>& loudness);
 
     void receivedFirstPacket();
     void disconnected();

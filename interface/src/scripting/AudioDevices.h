@@ -23,6 +23,7 @@ public:
     QAudioDeviceInfo info;
     QString display;
     bool selected { false };
+    float level { 0.0f };
 };
 
 class AudioDeviceList : public QAbstractListModel {
@@ -50,6 +51,7 @@ signals:
 private slots:
     void onDeviceChanged(const QAudioDeviceInfo& device);
     void onDevicesChanged(const QList<QAudioDeviceInfo>& devices);
+    void onLoudnessChanged(const QList<float>& loudness);
 
 private:
     friend class AudioDevices;

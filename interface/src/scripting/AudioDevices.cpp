@@ -34,9 +34,16 @@ Setting::Handle<QString>& getSetting(bool contextIsHMD, QAudio::Mode mode) {
     }
 }
 
+enum AudioDeviceRole {
+    DisplayRole = Qt::DisplayRole,
+    CheckStateRole = Qt::CheckStateRole,
+    LevelRole = Qt::UserRole
+};
+
 QHash<int, QByteArray> AudioDeviceList::_roles {
-    { Qt::DisplayRole, "display" },
-    { Qt::CheckStateRole, "selected" }
+    { DisplayRole, "display" },
+    { CheckStateRole, "selected" },
+    { LevelRole, "level" }
 };
 Qt::ItemFlags AudioDeviceList::_flags { Qt::ItemIsSelectable | Qt::ItemIsEnabled };
 
@@ -45,17 +52,19 @@ QVariant AudioDeviceList::data(const QModelIndex& index, int role) const {
         return QVariant();
     }
 
-    if (role == Qt::DisplayRole) {
+    if (role == DisplayRole) {
         return _devices.at(index.row()).display;
-    } else if (role == Qt::CheckStateRole) {
+    } else if (role == CheckStateRole) {
         return _devices.at(index.row()).selected;
+    } else if (_mode == QAudio::AudioInput && role == LevelRole) {
+        return _devices.at(index.row()).level;
     } else {
         return QVariant();
     }
 }
 
 bool AudioDeviceList::setData(const QModelIndex& index, const QVariant& value, int role) {
-    if (!index.isValid() || index.row() >= _devices.size() || role != Qt::CheckStateRole) {
+	if (!index.isValid() || index.row() >= _devices.size() || role != CheckStateRole) {
         return false;
     }
 
@@ -172,11 +181,24 @@ void AudioDeviceList::onDevicesChanged(const QList<QAudioDeviceInfo>& devices) {
     endResetModel();
 }
 
+void AudioDeviceList::onLoudnessChanged(const QList<float>& loudness) {
+    if (loudness.length() != _devices.length()) {
+        qWarning() << "AudioDeviceList" << __FUNCTION__ << "length mismatch";
+    }
+
+    for (auto i = 0; i < rowCount(); ++i) {
+        _devices[i].level = Audio::loudnessToLevel(loudness[i]);
+    }
+
+    emit dataChanged(createIndex(0, 0), createIndex(rowCount() - 1, 0), { LevelRole });
+}
+
 AudioDevices::AudioDevices(bool& contextIsHMD) : _contextIsHMD(contextIsHMD) {
     auto client = DependencyManager::get<AudioClient>();
 
     connect(client.data(), &AudioClient::deviceChanged, this, &AudioDevices::onDeviceChanged, Qt::QueuedConnection);
     connect(client.data(), &AudioClient::devicesChanged, this, &AudioDevices::onDevicesChanged, Qt::QueuedConnection);
+    connect(client.data(), &AudioClient::devicesLoudnessChanged, &_inputs, &AudioDeviceList::onLoudnessChanged, Qt::QueuedConnection);
 
     // connections are made after client is initialized, so we must also fetch the devices
     _inputs.onDeviceChanged(client->getActiveAudioDevice(QAudio::AudioInput));
