@@ -80,7 +80,7 @@ using Lock = std::unique_lock<Mutex>;
 static Mutex _deviceMutex;
 
 // thread-safe
-QList<QAudioDeviceInfo> getAvailableDevices(QAudio::Mode mode) {
+QList<QAudioDeviceInfo> AudioClient::getAvailableDevices(QAudio::Mode mode) {
     // NOTE: availableDevices() clobbers the Qt internal device list
     Lock lock(_deviceMutex);
     return QAudioDeviceInfo::availableDevices(mode);
@@ -287,7 +287,7 @@ void AudioClient::audioMixerKilled() {
 
 QAudioDeviceInfo getNamedAudioDeviceForMode(QAudio::Mode mode, const QString& deviceName) {
     QAudioDeviceInfo result;
-    foreach(QAudioDeviceInfo audioDevice, getAvailableDevices(mode)) {
+    foreach(QAudioDeviceInfo audioDevice, AudioClient::getAvailableDevices(mode)) {
         if (audioDevice.deviceName().trimmed() == deviceName.trimmed()) {
             result = audioDevice;
             break;

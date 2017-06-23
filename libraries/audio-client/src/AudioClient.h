@@ -152,6 +152,8 @@ public:
 
     bool getNamedAudioDeviceForModeExists(QAudio::Mode mode, const QString& deviceName);
 
+    static QList<QAudioDeviceInfo> getAvailableDevices(QAudio::Mode mode);
+
 #ifdef Q_OS_WIN
     static QString getWinDeviceName(wchar_t* guid);
 #endif
