@@ -25,7 +25,6 @@
 #include <QtCore/QVector>
 #include <QtMultimedia/QAudio>
 #include <QtMultimedia/QAudioFormat>
-#include <QtMultimedia/QAudioInput>
 
 #include <AbstractAudioInterface.h>
 #include <AudioEffectOptions.h>
@@ -51,6 +50,7 @@
 
 #include <plugins/CodecPlugin.h>
 
+#include "AudioInputs.h"
 #include "AudioIOStats.h"
 
 #ifdef _WIN32
@@ -63,7 +63,6 @@
 #pragma warning( pop )
 #endif
 
-class QAudioInput;
 class QAudioOutput;
 class QIODevice;
 
@@ -185,8 +184,7 @@ public slots:
     void toggleMute();
     bool isMuted() { return _muted; }
 
-
-    virtual void setIsStereoInput(bool stereo) override;
+    virtual void setIsStereoInput(bool stereo) override { _inputs.setIsStereo(stereo); }
 
     void setNoiseReduction(bool isNoiseGateEnabled) { _isNoiseGateEnabled = isNoiseGateEnabled; }
 
@@ -204,8 +202,9 @@ public slots:
     bool switchAudioDevice(QAudio::Mode mode, const QAudioDeviceInfo& deviceInfo = QAudioDeviceInfo());
     bool switchAudioDevice(QAudio::Mode mode, const QString& deviceName);
 
-    float getInputVolume() const { return (_audioInput) ? (float)_audioInput->volume() : 0.0f; }
-    void setInputVolume(float volume) { if (_audioInput) _audioInput->setVolume(volume); }
+    float getInputVolume() const { return _inputs.getVolume(); }
+    void setInputVolume(float volume) { _inputs.setVolume(volume); }
+
     void setReverb(bool reverb);
     void setReverbOptions(const AudioEffectOptions* options);
 
@@ -277,15 +276,12 @@ private:
         int _threshold{ 1 };
         bool _isSimulatingJitter{ false };
     };
-
     Gate _gate;
 
-    Mutex _injectorsMutex;
-    QAudioInput* _audioInput;
-    QAudioFormat _desiredInputFormat;
     QAudioFormat _inputFormat;
-    QIODevice* _inputDevice;
-    int _numInputCallbackBytes;
+    AudioInputs _inputs;
+
+    Mutex _injectorsMutex;
     QAudioOutput* _audioOutput;
     QAudioFormat _desiredOutputFormat;
     QAudioFormat _outputFormat;
@@ -300,7 +296,6 @@ private:
     std::atomic<int> _localSamplesAvailable { 0 };
     std::atomic<bool> _localInjectorsAvailable { false };
     MixedProcessedAudioStream _receivedAudioStream;
-    bool _isStereoInput;
 
     quint64 _outputStarveDetectionStartTimeMsec;
     int _outputStarveDetectionCount;
@@ -309,11 +304,8 @@ private:
     int _sessionOutputBufferSizeFrames;
     Setting::Handle<bool> _outputStarveDetectionEnabled;
 
-    StDev _stdev;
-    QElapsedTimer _timeSinceLastReceived;
     float _lastInputLoudness;
     float _timeSinceLastClip;
-    int _totalInputAudioSamples;
 
     bool _muted;
     bool _shouldEchoLocally;
@@ -355,8 +347,8 @@ private:
 
     void handleLocalEchoAndReverb(QByteArray& inputByteArray);
 
-    bool switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceInfo);
-    bool switchOutputToAudioDevice(const QAudioDeviceInfo& outputDeviceInfo);
+    bool switchOutputToAudioDevice(const QAudioDeviceInfo& device);
+    bool switchInputToAudioDevice(const QAudioDeviceInfo& device);
 
     quint16 _outgoingAvatarAudioSequenceNumber;
 
@@ -373,10 +365,8 @@ private:
     glm::vec3 avatarBoundingBoxCorner;
     glm::vec3 avatarBoundingBoxScale;
 
-    QAudioDeviceInfo _inputDeviceInfo;
     QAudioDeviceInfo _outputDeviceInfo;
 
-    QList<QAudioDeviceInfo> _inputDevices;
     QList<QAudioDeviceInfo> _outputDevices;
 
     bool _hasReceivedFirstPacket { false };
