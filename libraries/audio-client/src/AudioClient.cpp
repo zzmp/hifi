@@ -77,12 +77,12 @@ Setting::Handle<int> staticJitterBufferFrames("staticJitterBufferFrames",
 // protect the Qt internal device list
 using Mutex = std::mutex;
 using Lock = std::unique_lock<Mutex>;
-static Mutex _deviceMutex;
+Mutex deviceMutex;
 
 // thread-safe
 QList<QAudioDeviceInfo> AudioClient::getAvailableDevices(QAudio::Mode mode) {
     // NOTE: availableDevices() clobbers the Qt internal device list
-    Lock lock(_deviceMutex);
+    Lock lock(deviceMutex);
     return QAudioDeviceInfo::availableDevices(mode);
 }
 
@@ -103,7 +103,7 @@ void AudioClient::checkDevices() {
 }
 
 QAudioDeviceInfo AudioClient::getActiveAudioDevice(QAudio::Mode mode) const {
-    Lock lock(_deviceMutex);
+    Lock lock(deviceMutex);
 
     if (mode == QAudio::AudioInput) {
         return _inputDeviceInfo;
@@ -113,7 +113,7 @@ QAudioDeviceInfo AudioClient::getActiveAudioDevice(QAudio::Mode mode) const {
 }
 
 QList<QAudioDeviceInfo> AudioClient::getAudioDevices(QAudio::Mode mode) const {
-    Lock lock(_deviceMutex);
+    Lock lock(deviceMutex);
 
     if (mode == QAudio::AudioInput) {
         return _inputDevices;
@@ -931,7 +931,7 @@ void AudioClient::handleLocalEchoAndReverb(QByteArray& inputByteArray) {
         // we didn't have the loopback output device going so set that up now
 
         // NOTE: device start() uses the Qt internal device list
-        Lock lock(_deviceMutex);
+        Lock lock(deviceMutex);
         _loopbackOutputDevice = _loopbackAudioOutput->start();
         lock.unlock();
 
@@ -1385,7 +1385,7 @@ bool AudioClient::switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceIn
     bool supportedFormat = false;
 
     // NOTE: device start() uses the Qt internal device list
-    Lock lock(_deviceMutex);
+    Lock lock(deviceMutex);
 
     // cleanup any previously initialized device
     if (_audioInput) {
@@ -1501,7 +1501,7 @@ bool AudioClient::switchOutputToAudioDevice(const QAudioDeviceInfo& outputDevice
     bool supportedFormat = false;
 
     // NOTE: device start() uses the Qt internal device list
-    Lock lock(_deviceMutex);
+    Lock lock(deviceMutex);
 
     Lock localAudioLock(_localAudioMutex);
     _localSamplesAvailable.exchange(0, std::memory_order_release);
