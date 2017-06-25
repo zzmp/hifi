@@ -460,7 +460,7 @@ bool nativeFormatForAudioDevice(const QAudioDeviceInfo& audioDevice,
     return true;
 }
 
-bool adjustedFormatForAudioDevice(const QAudioDeviceInfo& audioDevice,
+bool AudioClient::getAdjustedFormat(const QAudioDeviceInfo& audioDevice,
                                   const QAudioFormat& desiredAudioFormat,
                                   QAudioFormat& adjustedAudioFormat) {
 
@@ -1417,7 +1417,7 @@ bool AudioClient::switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceIn
         _inputDeviceInfo = inputDeviceInfo;
         emit deviceChanged(QAudio::AudioInput, inputDeviceInfo);
 
-        if (adjustedFormatForAudioDevice(inputDeviceInfo, _desiredInputFormat, _inputFormat)) {
+        if (getAdjustedFormat(inputDeviceInfo, _desiredInputFormat, _inputFormat)) {
             qCDebug(audioclient) << "The format to be used for audio input is" << _inputFormat;
 
             // we've got the best we can get for input
@@ -1443,11 +1443,11 @@ bool AudioClient::switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceIn
             // if the user wants stereo but this device can't provide then bail
             if (!_isStereoInput || _inputFormat.channelCount() == 2) {
                 _audioInput = new QAudioInput(inputDeviceInfo, _inputFormat, this);
-                _numInputCallbackBytes = calculateNumberOfInputCallbackBytes(_inputFormat);
+                _numInputCallbackBytes = calculateBufferSize(_inputFormat);
                 _audioInput->setBufferSize(_numInputCallbackBytes);
 
                 // how do we want to handle input working, but output not working?
-                int numFrameSamples = calculateNumberOfFrameSamples(_numInputCallbackBytes);
+                int numFrameSamples = calculateFrameSamples(_numInputCallbackBytes);
                 _inputRingBuffer.resizeForFrameSize(numFrameSamples);
 
                 _inputDevice = _audioInput->start();
@@ -1546,7 +1546,7 @@ bool AudioClient::switchOutputToAudioDevice(const QAudioDeviceInfo& outputDevice
         _outputDeviceInfo = outputDeviceInfo;
         emit deviceChanged(QAudio::AudioOutput, outputDeviceInfo);
 
-        if (adjustedFormatForAudioDevice(outputDeviceInfo, _desiredOutputFormat, _outputFormat)) {
+        if (getAdjustedFormat(outputDeviceInfo, _desiredOutputFormat, _outputFormat)) {
             qCDebug(audioclient) << "The format to be used for audio output is" << _outputFormat;
 
             // we've got the best we can get for input
@@ -1673,7 +1673,7 @@ const float AudioClient::CALLBACK_ACCELERATOR_RATIO = 2.0f;
 const float AudioClient::CALLBACK_ACCELERATOR_RATIO = 2.0f;
 #endif
 
-int AudioClient::calculateNumberOfInputCallbackBytes(const QAudioFormat& format) const {
+int AudioClient::calculateBufferSize(const QAudioFormat& format) {
     int numInputCallbackBytes = (int)(((AudioConstants::NETWORK_FRAME_BYTES_PER_CHANNEL
         * format.channelCount()
         * ((float) format.sampleRate() / AudioConstants::SAMPLE_RATE))
@@ -1682,7 +1682,7 @@ int AudioClient::calculateNumberOfInputCallbackBytes(const QAudioFormat& format)
     return numInputCallbackBytes;
 }
 
-int AudioClient::calculateNumberOfFrameSamples(int numBytes) const {
+int AudioClient::calculateFrameSamples(int numBytes) const {
     int frameSamples = (int)(numBytes * CALLBACK_ACCELERATOR_RATIO + 0.5f) / AudioConstants::SAMPLE_SIZE;
     return frameSamples;
 }

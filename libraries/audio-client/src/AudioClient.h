@@ -153,6 +153,12 @@ public:
     bool getNamedAudioDeviceForModeExists(QAudio::Mode mode, const QString& deviceName);
 
     static QList<QAudioDeviceInfo> getAvailableDevices(QAudio::Mode mode);
+    static bool getAdjustedFormat(const QAudioDeviceInfo& device, const QAudioFormat& desiredFormat, QAudioFormat& actualFormat);
+
+    // callback-acceleration dependent calculations
+    static int calculateBufferSize(const QAudioFormat& format);
+    int calculateFrameSamples(int numBytes) const;
+
 
 #ifdef Q_OS_WIN
     static QString getWinDeviceName(wchar_t* guid);
@@ -351,10 +357,6 @@ private:
 
     bool switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceInfo);
     bool switchOutputToAudioDevice(const QAudioDeviceInfo& outputDeviceInfo);
-
-    // Callback acceleration dependent calculations
-    int calculateNumberOfInputCallbackBytes(const QAudioFormat& format) const;
-    int calculateNumberOfFrameSamples(int numBytes) const;
 
     quint16 _outgoingAvatarAudioSequenceNumber;
 
