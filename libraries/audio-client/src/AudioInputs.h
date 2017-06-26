@@ -37,11 +37,12 @@ public:
     float getVolume() const { return _input ? (float)_input->volume() : 0.0f; }
     void setVolume(float volume) { if (_input) { _input->setVolume(volume); } }
 
-    QByteArray readAll() { return _device ? _device->readAll() : QByteArray(); }
+    QByteArray readAll();
 
 signals:
     void deviceChanged(const QAudioDeviceInfo& device);
     void deviceListChanged(const QList<QAudioDeviceInfo>& devices);
+    void deviceListLoudnessChanged(const QList<float>& loudness);
 
     void readyRead();
 
@@ -50,10 +51,12 @@ private slots:
 
 private:
     void checkDevices();
+    void updateLoudness();
 
     QAudioFormat _format;
 
     QList<QAudioDeviceInfo> _deviceList;
+    float _loudness { 0.0f };
     QAudioDeviceInfo _deviceInfo;
 
     // unique pointers with deleters

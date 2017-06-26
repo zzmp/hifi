@@ -223,6 +223,7 @@ AudioClient::AudioClient() :
         [this](const QAudioDeviceInfo& device) { emit deviceChanged(QAudio::AudioInput, device); });
     connect(&_inputs, &AudioInputs::deviceListChanged,
         [this](const QList<QAudioDeviceInfo>& device) { emit deviceListChanged(QAudio::AudioInput, device); });
+    connect(&_inputs, &AudioInputs::deviceListLoudnessChanged, this, &AudioClient::inputListLoudnessChanged);
     connect(&_inputs, &AudioInputs::readyRead, this, &AudioClient::handleMicAudioInput);
 
     // initialize wasapi; if getAvailableDevices is called from the CheckDevicesThread before this, it will crash
