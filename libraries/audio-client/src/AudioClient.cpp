@@ -350,7 +350,7 @@ QString AudioClient::getWinDeviceName(wchar_t* guid) {
 
 QAudioDeviceInfo defaultAudioDeviceForMode(QAudio::Mode mode) {
 #ifdef __APPLE__
-    if (getAvailableDevices(mode).size() > 1) {
+    if (AudioClient::getAvailableDevices(mode).size() > 1) {
         AudioDeviceID defaultDeviceID = 0;
         uint32_t propertySize = sizeof(AudioDeviceID);
         AudioObjectPropertyAddress propertyAddress = {
@@ -380,7 +380,7 @@ QAudioDeviceInfo defaultAudioDeviceForMode(QAudio::Mode mode) {
 
             if (!getPropertyError && propertySize) {
                 // find a device in the list that matches the name we have and return it
-                foreach(QAudioDeviceInfo audioDevice, getAvailableDevices(mode)) {
+                foreach(QAudioDeviceInfo audioDevice, AudioClient::getAvailableDevices(mode)) {
                     if (audioDevice.deviceName() == CFStringGetCStringPtr(deviceName, kCFStringEncodingMacRoman)) {
                         return audioDevice;
                     }
