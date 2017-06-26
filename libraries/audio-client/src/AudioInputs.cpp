@@ -28,11 +28,7 @@ void inputDeleter(QAudioInput* input) {
 
 void deviceDeleter(QIODevice* device) { /* nop */ }
 
-AudioInputs::AudioInputs(const QAudioFormat& format) :
-    _format(format),
-    _input(nullptr, &inputDeleter),
-    _device(nullptr, &deviceDeleter)
-{
+AudioInputs::AudioInputs(const QAudioFormat& format) : _format(format) {
     // initialize wasapi for QAudio::AudioInput
     checkDevices();
 
@@ -44,29 +40,158 @@ AudioInputs::AudioInputs(const QAudioFormat& format) :
     const unsigned long DEVICE_CHECK_INTERVAL_MSECS = 2 * 1000;
     checkDevicesTimer->start(DEVICE_CHECK_INTERVAL_MSECS);
 
+    // set up regular updates to device loudness
     auto loudnessTimer = new QTimer(this);
     connect(loudnessTimer, &QTimer::timeout, [this] {
         QtConcurrent::run(QThreadPool::globalInstance(), [this] { updateLoudness(); });
     });
-    const unsigned long LOUDNESS_INTERVAL_MSECS = 50;
+    const unsigned long LOUDNESS_INTERVAL_MSECS = 1000 / 20;
     loudnessTimer->start(LOUDNESS_INTERVAL_MSECS);
 }
 
 void AudioInputs::checkDevices() {
     auto devices = AudioClient::getAvailableDevices(QAudio::AudioInput);
-    if (devices != _deviceList) {
+    if (devices != _deviceInfoList) {
         QMetaObject::invokeMethod(this, "onDeviceListChanged", Q_ARG(QList<QAudioDeviceInfo>, devices));
     }
 }
 
-QByteArray AudioInputs::readAll() {
-    if (!_device) {
-        return QByteArray();
+void AudioInputs::onDeviceListChanged(QList<QAudioDeviceInfo> devices) {
+    Lock lock(deviceMutex);
+
+    QList<QAudioFormat> formatList;
+    QList<float> loudnessList;
+    QList<std::shared_ptr<QAudioInput>> inputList;
+    QList<std::shared_ptr<QIODevice>> deviceList;
+    int selection = -1;
+    bool shouldResetReadyRead = true;
+
+    for (int i = 0; i < devices.size(); ++i) {
+        formatList.push_back(QAudioFormat());
+        loudnessList.push_back(0.0f);
+        inputList.push_back(nullptr);
+        deviceList.push_back(nullptr);
+
+        // check for existing device
+        for (int j = 0; j < _deviceInfoList.size(); ++j) {
+            if (devices[i] == _deviceInfoList[j]) {
+                if (_selected == j) {
+                    selection = i;
+                    shouldResetReadyRead = !_formatChanged;
+                }
+
+                // if the format changed, open a new device
+                if (_formatChanged) {
+                    _inputList[j].reset();
+                    _deviceList[j].reset();
+                    break;
+                }
+
+                // reuse the existing open device
+                formatList[i] = _formatList[j];
+                inputList[i] = _inputList[j];
+                deviceList[i] = _deviceList[j];
+
+                ++i;
+                break;
+            }
+        }
+
+        // open a new device
+        QAudioDeviceInfo& deviceInfo = devices[i];
+
+        // check compatibility
+        QAudioFormat format;
+        bool isCompatible = AudioClient::getAdjustedFormat(deviceInfo, _format, format);
+        if (!isCompatible) {
+            qCDebug(audioclient) << "AudioInputs - device incompatible:" << deviceInfo.deviceName() << _format;
+            qCDebug(audioclient) << "AudioInputs - closest compatible format:" << deviceInfo.nearestFormat(_format);
+            continue;
+        }
+
+        // check channel count
+        if (format.channelCount() != _format.channelCount()) {
+            qCDebug(audioclient) << "AudioInputs - channel count unavailable:" << deviceInfo.deviceName() << _format;
+            continue;
+        }
+
+        // instantiate the device
+        auto input = inputList[i] =
+            std::shared_ptr<QAudioInput>(new QAudioInput(deviceInfo, format, this), &inputDeleter);
+        int bufferSize = AudioClient::calculateBufferSize(format);
+        input->setBufferSize(bufferSize);
+        auto device = deviceList[i] = std::shared_ptr<QIODevice>(input->start(), &deviceDeleter);
+
+        // check for success
+        if (!device) {
+            qCDebug(audioclient) << "AudioInputs - error starting:" << input->error();
+            continue;
+        }
+
+        formatList[i] = format;
+        qCDebug(audioclient) << "AudioInputs - set:" << deviceInfo.deviceName() << format;
     }
 
-    QByteArray buffer = _device->readAll();
+    _selected = -1;
+    _formatChanged = false;
+    _deviceInfoList.swap(devices);
+    _formatList.swap(formatList);
+    _loudnessList.swap(loudnessList);
+    _inputList.swap(inputList);
+    _deviceList.swap(deviceList);
+    _selected = selection;
 
-    int16_t* samples = reinterpret_cast<int16_t*>(buffer.data());
+    if (shouldResetReadyRead) {
+        if (_selected != -1) {
+            resetReadyRead(_deviceList[_selected].get());
+        }
+    }
+
+    emit deviceListChanged(devices);
+}
+
+QAudioFormat AudioInputs::setAudioDevice(const QAudioDeviceInfo& deviceInfo) {
+    Lock lock(deviceMutex);
+
+    for (int i = 0; i < _deviceInfoList.size(); ++i) {
+        if (deviceInfo == _deviceInfoList[i]) {
+            return setAudioDevice(i);
+        }
+    }
+
+    resetReadyRead(nullptr);
+    return QAudioFormat();
+}
+
+QAudioFormat AudioInputs::setAudioDevice(int selection) {
+    _selected = selection;
+
+    // emit the change so long as it is non-null, regardless of success
+    emit deviceChanged(_deviceInfoList[_selected]);
+    resetReadyRead(_deviceList[_selected].get());
+
+    if (_deviceList[_selected]) {
+        qCDebug(audioclient) << "AudioInputs - device switched:" << _deviceInfoList[_selected].deviceName();
+        return _formatList[_selected];
+    } else {
+        qCDebug(audioclient) << "AudioInputs - device unavailable:" << _deviceInfoList[_selected].deviceName();
+        qCDebug(audioclient) << "AudioInputs - see device initialization for details";
+        return QAudioFormat();
+    }
+}
+
+QAudioDeviceInfo AudioInputs::getAudioDevice() const {
+    Lock lock(deviceMutex);
+    return (_selected != -1) ? _deviceInfoList[_selected] : QAudioDeviceInfo();
+}
+
+QList<QAudioDeviceInfo> AudioInputs::getAudioDeviceList() const {
+    Lock lock(deviceMutex);
+    return _deviceInfoList;
+}
+
+inline float getLoudness(const QByteArray& buffer) {
+    const int16_t* samples = reinterpret_cast<const int16_t*>(buffer.data());
     int numSamples = buffer.size() / AudioConstants::SAMPLE_SIZE;
     assert(numSamples < 65536); // int32_t loudness cannot overflow
 
@@ -76,84 +201,69 @@ QByteArray AudioInputs::readAll() {
         loudness += sample;
     }
 
-    _loudness = (float)loudness / numSamples;
-
-    return buffer;
+    return (float)loudness / numSamples;
 }
 
 void AudioInputs::updateLoudness() {
-    QList<float> loudness;
-    for (int i = 0; i < _deviceList.size(); ++i) {
-        loudness.push_back((_deviceInfo == _deviceList[i]) ? _loudness : 0.0f);
-    }
-    emit deviceListLoudnessChanged(loudness);
-}
-
-void AudioInputs::onDeviceListChanged(QList<QAudioDeviceInfo> devices) {
-    _deviceList.swap(devices);
-    emit deviceListChanged(devices);
-}
-
-QAudioFormat AudioInputs::setAudioDevice(const QAudioDeviceInfo& deviceInfo) {
     Lock lock(deviceMutex);
-    _deviceInfo = deviceInfo;
 
-    // stop the current audio device
-    if (_input) {
-        _input->stop();
-        _input.reset();
-        _device.reset();
+    for (int i = 0; i < _deviceList.size(); ++i) {
+        if (_selected != i && _deviceList[i]) {
+            QByteArray buffer = _deviceList[i]->readAll();
+            _loudnessList[i] = getLoudness(buffer);
+        }
     }
 
-    if (deviceInfo.isNull()) {
-        return QAudioFormat();
+    emit deviceListLoudnessChanged(_loudnessList);
+}
+
+void AudioInputs::resetReadyRead(QIODevice* device) {
+    disconnect(readyReadConnection);
+    if (device) {
+        readyReadConnection = connect(device, &QIODevice::readyRead, this, &AudioInputs::readyRead,
+            // connect directly to avoid audio lag
+            Qt::DirectConnection);
+    }
+}
+
+QByteArray AudioInputs::readAll() {
+    if (_selected == -1 || !_deviceList[_selected]) {
+        return QByteArray();
     }
 
-    // emit the change so long as it is non-null, regardless of success
-    emit deviceChanged(deviceInfo);
-
-    // check compatibility
-    QAudioFormat format;
-    bool isCompatible = AudioClient::getAdjustedFormat(deviceInfo, _format, format);
-    if (!isCompatible) {
-        qCDebug(audioclient) << "AudioInputs - device incompatible:" << deviceInfo.deviceName() << _format;
-        qCDebug(audioclient) << "AudioInputs - closest compatible format:" << deviceInfo.nearestFormat(_format);
-        return QAudioFormat();
-    }
-
-    // check channel count
-    if (format.channelCount() != _format.channelCount()) {
-        qCDebug(audioclient) << "AudioInputs - channel count unavailable:" << deviceInfo.deviceName() << _format;
-        return QAudioFormat();
-    }
-
-    // instantiate the device
-    _input = Pointer<QAudioInput>(new QAudioInput(deviceInfo, format, this), &inputDeleter);
-    int bufferSize = AudioClient::calculateBufferSize(format);
-    _input->setBufferSize(bufferSize);
-    _device = Pointer<QIODevice>(_input->start(), &deviceDeleter);
-
-    // check for success
-    if (!_device) {
-        qCDebug(audioclient) << "AudioInputs - error starting:" << _input->error();
-        return QAudioFormat();
-    }
-
-    qCDebug(audioclient) << "AudioInputs - set:" << deviceInfo.deviceName() << format;
-
-    // connect directly to avoid audio lag
-    connect(_device.get(), &QIODevice::readyRead, this, &AudioInputs::readyRead, Qt::DirectConnection);
-
-    return format;
+    QByteArray buffer = _deviceList[_selected]->readAll();
+    _loudnessList[_selected] = getLoudness(buffer);
+    return buffer;
 }
 
 bool AudioInputs::isStereo() const {
-    return _format.channelCount() == AudioConstants::STEREO;
+    // this is called before every call to readAll, so it is cached
+    return _isStereo;
 }
 
 void AudioInputs::setIsStereo(bool stereo) {
     if (isStereo() != stereo) {
         _format.setChannelCount(stereo ? AudioConstants::STEREO : AudioConstants::MONO);
-        setAudioDevice(_deviceInfo);
+        _isStereo = stereo;
+
+        // reopen devices with new stereo setting
+        _formatChanged = true;
+        QMetaObject::invokeMethod(this, "onDeviceListChanged", Q_ARG(QList<QAudioDeviceInfo>, _deviceInfoList));
+    }
+}
+
+float AudioInputs::getVolume() const {
+    Lock(deviceMutex);
+    if (_selected != -1 && _inputList[_selected]) {
+        return (float)_inputList[_selected]->volume();
+    } else {
+        return 0.0f;
+    }
+}
+
+void AudioInputs::setVolume(float volume) {
+    Lock(deviceMutex);
+    if (_selected != -1 && _inputList[_selected]) {
+        _inputList[_selected]->setVolume(volume);
     }
 }

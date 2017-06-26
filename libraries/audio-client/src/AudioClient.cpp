@@ -96,21 +96,19 @@ void AudioClient::checkDevices() {
 }
 
 QAudioDeviceInfo AudioClient::getActiveAudioDevice(QAudio::Mode mode) const {
-    Lock lock(deviceMutex);
-
     if (mode == QAudio::AudioInput) {
         return _inputs.getAudioDevice();
     } else { // if (mode == QAudio::AudioOutput)
+        Lock lock(deviceMutex);
         return _outputDeviceInfo;
     }
 }
 
 QList<QAudioDeviceInfo> AudioClient::getAudioDevices(QAudio::Mode mode) const {
-    Lock lock(deviceMutex);
-
     if (mode == QAudio::AudioInput) {
         return _inputs.getAudioDeviceList();
     } else { // if (mode == QAudio::AudioOutput)
+        Lock lock(deviceMutex);
         return _outputDevices;
     }
 }

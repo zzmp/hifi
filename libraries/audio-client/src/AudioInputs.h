@@ -12,6 +12,7 @@
 #ifndef hifi_AudioInputs_h
 #define hifi_AudioInputs_h
 
+#include <atomic>
 #include <memory>
 
 #include <QObject>
@@ -28,14 +29,14 @@ public:
     // returns the actual format on success, QAudioFormat() on failure
     QAudioFormat setAudioDevice(const QAudioDeviceInfo& deviceInfo = QAudioDeviceInfo());
 
-    QAudioDeviceInfo getAudioDevice() const { return _deviceInfo; }
-    QList<QAudioDeviceInfo> getAudioDeviceList() const { return _deviceList;  }
+    QAudioDeviceInfo getAudioDevice() const;
+    QList<QAudioDeviceInfo> getAudioDeviceList() const;
 
     bool isStereo() const;
     void setIsStereo(bool stereo);
 
-    float getVolume() const { return _input ? (float)_input->volume() : 0.0f; }
-    void setVolume(float volume) { if (_input) { _input->setVolume(volume); } }
+    float getVolume() const; //{ return _input ? (float)_input->volume() : 0.0f; }
+    void setVolume(float volume); //{ if (_input) { _input->setVolume(volume); } }
 
     QByteArray readAll();
 
@@ -50,19 +51,23 @@ private slots:
     void onDeviceListChanged(QList<QAudioDeviceInfo> devices);
 
 private:
+    QAudioFormat setAudioDevice(int selection);
+    void resetReadyRead(QIODevice* device);
     void checkDevices();
     void updateLoudness();
 
     QAudioFormat _format;
+    std::atomic<bool> _formatChanged { false };
+    bool _isStereo;
 
-    QList<QAudioDeviceInfo> _deviceList;
-    float _loudness { 0.0f };
-    QAudioDeviceInfo _deviceInfo;
+    QMetaObject::Connection readyReadConnection;
 
-    // unique pointers with deleters
-    template <class T> using Pointer = std::unique_ptr<T, void(*)(T*)>;
-    Pointer<QAudioInput> _input;
-    Pointer<QIODevice> _device;
+    QList<QAudioDeviceInfo> _deviceInfoList;
+    QList<QAudioFormat> _formatList;
+    QList<float> _loudnessList;
+    QList<std::shared_ptr<QAudioInput>> _inputList;
+    QList<std::shared_ptr<QIODevice>> _deviceList;
+    std::atomic<int> _selected { -1 };
 };
 
 #endif // hifi_AudioInputs_h
