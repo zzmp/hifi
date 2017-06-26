@@ -162,7 +162,7 @@ void AudioDeviceList::onDeviceChanged(const QAudioDeviceInfo& device) {
     emit dataChanged(createIndex(0, 0), createIndex(rowCount() - 1, 0));
 }
 
-void AudioDeviceList::onDevicesChanged(const QList<QAudioDeviceInfo>& devices) {
+void AudioDeviceList::onDeviceListChanged(const QList<QAudioDeviceInfo>& devices) {
     beginResetModel();
 
     _devices.clear();
@@ -181,7 +181,9 @@ void AudioDeviceList::onDevicesChanged(const QList<QAudioDeviceInfo>& devices) {
     endResetModel();
 }
 
-void AudioDeviceList::onLoudnessChanged(const QList<float>& loudness) {
+void AudioDeviceList::onInputListLoudnessChanged(const QList<float>& loudness) {
+    assert(_mode == QAudio::AudioInput);
+
     if (loudness.length() != _devices.length()) {
         qWarning() << "AudioDeviceList" << __FUNCTION__ << "length mismatch";
     }
@@ -197,14 +199,14 @@ AudioDevices::AudioDevices(bool& contextIsHMD) : _contextIsHMD(contextIsHMD) {
     auto client = DependencyManager::get<AudioClient>();
 
     connect(client.data(), &AudioClient::deviceChanged, this, &AudioDevices::onDeviceChanged, Qt::QueuedConnection);
-    connect(client.data(), &AudioClient::devicesChanged, this, &AudioDevices::onDevicesChanged, Qt::QueuedConnection);
-    connect(client.data(), &AudioClient::devicesLoudnessChanged, &_inputs, &AudioDeviceList::onLoudnessChanged, Qt::QueuedConnection);
+    connect(client.data(), &AudioClient::deviceListChanged, this, &AudioDevices::onDeviceListChanged, Qt::QueuedConnection);
+    connect(client.data(), &AudioClient::inputListLoudnessChanged, &_inputs, &AudioDeviceList::onInputListLoudnessChanged, Qt::QueuedConnection);
 
     // connections are made after client is initialized, so we must also fetch the devices
     _inputs.onDeviceChanged(client->getActiveAudioDevice(QAudio::AudioInput));
     _outputs.onDeviceChanged(client->getActiveAudioDevice(QAudio::AudioOutput));
-    _inputs.onDevicesChanged(client->getAudioDevices(QAudio::AudioInput));
-    _outputs.onDevicesChanged(client->getAudioDevices(QAudio::AudioOutput));
+    _inputs.onDeviceListChanged(client->getAudioDevices(QAudio::AudioInput));
+    _outputs.onDeviceListChanged(client->getAudioDevices(QAudio::AudioOutput));
 
     connect(&_inputs, &AudioDeviceList::deviceSelected, [&](const QAudioDeviceInfo& device, const QAudioDeviceInfo& previousDevice) {
         onDeviceSelected(QAudio::AudioInput, device, previousDevice);
@@ -266,7 +268,7 @@ void AudioDevices::onDeviceChanged(QAudio::Mode mode, const QAudioDeviceInfo& de
     }
 }
 
-void AudioDevices::onDevicesChanged(QAudio::Mode mode, const QList<QAudioDeviceInfo>& devices) {
+void AudioDevices::onDeviceListChanged(QAudio::Mode mode, const QList<QAudioDeviceInfo>& devices) {
     static bool initialized { false };
     auto initialize = [&]{
         if (initialized) {
@@ -277,11 +279,11 @@ void AudioDevices::onDevicesChanged(QAudio::Mode mode, const QList<QAudioDeviceI
     };
 
     if (mode == QAudio::AudioInput) {
-        _inputs.onDevicesChanged(devices);
+        _inputs.onDeviceListChanged(devices);
         static std::once_flag inputFlag;
         std::call_once(inputFlag, initialize);
     } else { // if (mode == QAudio::AudioOutput)
-        _outputs.onDevicesChanged(devices);
+        _outputs.onDeviceListChanged(devices);
         static std::once_flag outputFlag;
         std::call_once(outputFlag, initialize);
     }

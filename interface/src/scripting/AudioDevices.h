@@ -50,8 +50,8 @@ signals:
 
 private slots:
     void onDeviceChanged(const QAudioDeviceInfo& device);
-    void onDevicesChanged(const QList<QAudioDeviceInfo>& devices);
-    void onLoudnessChanged(const QList<float>& loudness);
+    void onDeviceListChanged(const QList<QAudioDeviceInfo>& devices);
+    void onInputListLoudnessChanged(const QList<float>& loudness);
 
 private:
     friend class AudioDevices;
@@ -83,7 +83,7 @@ private slots:
     void onContextChanged(const QString& context);
     void onDeviceSelected(QAudio::Mode mode, const QAudioDeviceInfo& device, const QAudioDeviceInfo& previousDevice);
     void onDeviceChanged(QAudio::Mode mode, const QAudioDeviceInfo& device);
-    void onDevicesChanged(QAudio::Mode mode, const QList<QAudioDeviceInfo>& devices);
+    void onDeviceListChanged(QAudio::Mode mode, const QList<QAudioDeviceInfo>& devices);
 
 private:
     friend class Audio;
