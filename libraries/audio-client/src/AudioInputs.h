@@ -31,13 +31,13 @@ public:
     QAudioDeviceInfo getAudioDevice() const { return _deviceInfo; }
     QList<QAudioDeviceInfo> getAudioDeviceList() const { return _deviceList;  }
 
-    bool isStereo() const;
+    bool isStereo() const { return _isStereo; }
     void setIsStereo(bool stereo);
 
     float getVolume() const { return _input ? (float)_input->volume() : 0.0f; }
     void setVolume(float volume) { if (_input) { _input->setVolume(volume); } }
 
-    QByteArray readAll();
+    QByteArray readAll() { return _device ? _device->readAll() : QByteArray(); }
 
 signals:
     void deviceChanged(const QAudioDeviceInfo& device);
@@ -54,9 +54,9 @@ private:
     void updateLoudness();
 
     QAudioFormat _format;
+    bool _isStereo;
 
     QList<QAudioDeviceInfo> _deviceList;
-    float _loudness { 0.0f };
     QAudioDeviceInfo _deviceInfo;
 
     // unique pointers with deleters

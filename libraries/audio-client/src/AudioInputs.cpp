@@ -44,12 +44,14 @@ AudioInputs::AudioInputs(const QAudioFormat& format) :
     const unsigned long DEVICE_CHECK_INTERVAL_MSECS = 2 * 1000;
     checkDevicesTimer->start(DEVICE_CHECK_INTERVAL_MSECS);
 
+#ifdef WIN32
     auto loudnessTimer = new QTimer(this);
     connect(loudnessTimer, &QTimer::timeout, [this] {
         QtConcurrent::run(QThreadPool::globalInstance(), [this] { updateLoudness(); });
     });
-    const unsigned long LOUDNESS_INTERVAL_MSECS = 50;
+    const unsigned long LOUDNESS_INTERVAL_MSECS = 1000 / 30; // QML refresh rate
     loudnessTimer->start(LOUDNESS_INTERVAL_MSECS);
+#endif
 }
 
 void AudioInputs::checkDevices() {
@@ -57,36 +59,6 @@ void AudioInputs::checkDevices() {
     if (devices != _deviceList) {
         QMetaObject::invokeMethod(this, "onDeviceListChanged", Q_ARG(QList<QAudioDeviceInfo>, devices));
     }
-}
-
-QByteArray AudioInputs::readAll() {
-    if (!_device) {
-        return QByteArray();
-    }
-
-    QByteArray buffer = _device->readAll();
-
-    int16_t* samples = reinterpret_cast<int16_t*>(buffer.data());
-    int numSamples = buffer.size() / AudioConstants::SAMPLE_SIZE;
-    assert(numSamples < 65536); // int32_t loudness cannot overflow
-
-    int32_t loudness = 0;
-    for (int i = 0; i < numSamples; ++i) {
-        int32_t sample = std::abs((int32_t)samples[i]);
-        loudness += sample;
-    }
-
-    _loudness = (float)loudness / numSamples;
-
-    return buffer;
-}
-
-void AudioInputs::updateLoudness() {
-    QList<float> loudness;
-    for (int i = 0; i < _deviceList.size(); ++i) {
-        loudness.push_back((_deviceInfo == _deviceList[i]) ? _loudness : 0.0f);
-    }
-    emit deviceListLoudnessChanged(loudness);
 }
 
 void AudioInputs::onDeviceListChanged(QList<QAudioDeviceInfo> devices) {
@@ -98,9 +70,8 @@ QAudioFormat AudioInputs::setAudioDevice(const QAudioDeviceInfo& deviceInfo) {
     Lock lock(deviceMutex);
     _deviceInfo = deviceInfo;
 
-    // stop the current audio device
+    // reset the current audio device
     if (_input) {
-        _input->stop();
         _input.reset();
         _device.reset();
     }
@@ -147,12 +118,19 @@ QAudioFormat AudioInputs::setAudioDevice(const QAudioDeviceInfo& deviceInfo) {
     return format;
 }
 
-bool AudioInputs::isStereo() const {
-    return _format.channelCount() == AudioConstants::STEREO;
+void AudioInputs::updateLoudness() {
+#ifdef WIN32
+    QList<float> loudness;
+    for (int i = 0; i < _deviceList.size(); ++i) {
+        loudness.push_back(0.0f);
+    }
+    // TODO: emit deviceListLoudnessChanged(loudness);
+#endif
 }
 
 void AudioInputs::setIsStereo(bool stereo) {
     if (isStereo() != stereo) {
+        _isStereo = stereo;
         _format.setChannelCount(stereo ? AudioConstants::STEREO : AudioConstants::MONO);
         setAudioDevice(_deviceInfo);
     }
