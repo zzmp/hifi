@@ -122,7 +122,7 @@ Rectangle {
                     width: parent.width;
 
                     AudioControls.CheckBox {
-                        Layout.maximumWidth: parent.width - inputLevel.width - 40;
+                        Layout.maximumWidth: parent.width - inputPeak.width - 40;
                         text: display;
                         wrap: false;
                         checked: selected;
@@ -131,9 +131,10 @@ Rectangle {
                             checked = Qt.binding(function() { return selected; }); // restore binding
                         }
                     }
-                    InputLevel {
-                        id: inputLevel;
-                        level: model.level;
+                    InputPeak {
+                        id: inputPeak;
+                        visible: Audio.devices.input.peakAvailable;
+                        peak: model.peak;
                         Layout.alignment: Qt.AlignRight;
                         Layout.rightMargin: 30;
                     }
