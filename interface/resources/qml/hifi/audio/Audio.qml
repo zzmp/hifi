@@ -133,7 +133,6 @@ Rectangle {
                     }
                     InputPeak {
                         id: inputPeak;
-                        visible: Audio.devices.input.peakAvailable;
                         peak: model.peak;
                         Layout.alignment: Qt.AlignRight;
                         Layout.rightMargin: 30;
