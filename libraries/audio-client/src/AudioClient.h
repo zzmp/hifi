@@ -54,12 +54,11 @@
 #include "AudioIOStats.h"
 
 #ifdef _WIN32
+#include <mmdeviceapi.h>
+
 #pragma warning( push )
 #pragma warning( disable : 4273 )
 #pragma warning( disable : 4305 )
-#endif
-
-#ifdef _WIN32
 #pragma warning( pop )
 #endif
 
@@ -161,6 +160,7 @@ public:
 
 #ifdef Q_OS_WIN
     static QString getWinDeviceName(wchar_t* guid);
+    static QString getWinDeviceName(IMMDevice* pEndpoint);
 #endif
 
 public slots:

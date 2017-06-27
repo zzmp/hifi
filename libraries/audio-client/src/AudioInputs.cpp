@@ -17,6 +17,13 @@
 #include "AudioClientLogging.h"
 #include "AudioConstants.h"
 
+#ifdef WIN32
+#include <windows.h>
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
+#include <audioclient.h>
+#endif
+
 using Mutex = std::mutex;
 using Lock = std::unique_lock<Mutex>;
 extern Mutex deviceMutex; // defined in AudioClient.cpp
@@ -118,13 +125,102 @@ QAudioFormat AudioInputs::setAudioDevice(const QAudioDeviceInfo& deviceInfo) {
     return format;
 }
 
+#ifdef WIN32
+std::vector<IAudioClient*> activeClients;
+#endif
+
 void AudioInputs::updateLoudness() {
 #ifdef WIN32
+    // initialize the payload
     QList<float> loudness;
     for (int i = 0; i < _deviceList.size(); ++i) {
         loudness.push_back(0.0f);
     }
-    // TODO: emit deviceListLoudnessChanged(loudness);
+
+    CoInitialize(NULL);
+
+    if (!_enableLoudness) {
+        for (auto audioClient : activeClients) {
+            audioClient->Stop();
+            audioClient->Release();
+        }
+        activeClients.clear();
+    }
+
+    HRESULT result;
+    IMMDeviceEnumerator* enumerator;
+    result = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), NULL, CLSCTX_INPROC_SERVER,
+        __uuidof(IMMDeviceEnumerator), (void**)&enumerator);
+    if (FAILED(result)) {
+        return;
+    }
+
+    IMMDeviceCollection* endpoints;
+    result = enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &endpoints);
+    if (FAILED(result)) {
+        enumerator->Release();
+        return;
+    }
+
+    UINT count;
+    result = endpoints->GetCount(&count);
+    if (FAILED(result)) {
+        endpoints->Release();
+        enumerator->Release();
+        return;
+    }
+
+    IMMDevice* device;
+    IAudioMeterInformation* meterInfo;
+    float peakValue;
+    for (UINT i = 0; i < count; ++i) {
+        result = endpoints->Item(i, &device);
+        if (FAILED(result)) {
+            continue;
+        }
+
+        result = device->Activate(__uuidof(IAudioMeterInformation), CLSCTX_ALL, NULL, (void**)&meterInfo);
+        if (FAILED(result)) {
+            device->Release();
+            continue;
+        }
+
+        if (_enableLoudness) {
+            DWORD hardwareSupport;
+            result = meterInfo->QueryHardwareSupport(&hardwareSupport);
+            if (FAILED(result)) {
+                device->Release();
+                continue;
+            }
+
+            IAudioClient *audioClient = NULL;
+            if (!(hardwareSupport & ENDPOINT_HARDWARE_SUPPORT_METER)) {
+                result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&audioClient);
+                LPWAVEFORMATEX format = NULL;
+                audioClient->GetMixFormat(&format);
+                audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, format, NULL);
+                audioClient->Start();
+                activeClients.push_back(audioClient);
+            }
+        }
+
+        meterInfo->GetPeakValue(&peakValue);
+        QString deviceName = AudioClient::getWinDeviceName(device);
+        for (int j = 0; j < loudness.size(); ++j) {
+            if (deviceName == _deviceList[j].deviceName()) {
+                loudness[j] = peakValue;
+                break;
+            }
+        }
+
+        meterInfo->Release();
+    }
+
+    endpoints->Release();
+    enumerator->Release();
+
+    emit deviceListLoudnessChanged(loudness);
 #endif
 }
 

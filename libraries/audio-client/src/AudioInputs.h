@@ -37,6 +37,8 @@ public:
     float getVolume() const { return _input ? (float)_input->volume() : 0.0f; }
     void setVolume(float volume) { if (_input) { _input->setVolume(volume); } }
 
+    void enableLoudness(bool enable) { _enableLoudness = enable; }
+
     QByteArray readAll() { return _device ? _device->readAll() : QByteArray(); }
 
 signals:
@@ -55,6 +57,7 @@ private:
 
     QAudioFormat _format;
     bool _isStereo;
+    std::atomic<bool> _enableLoudness { false };
 
     QList<QAudioDeviceInfo> _deviceList;
     QAudioDeviceInfo _deviceInfo;
