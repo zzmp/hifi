@@ -198,7 +198,7 @@ void AudioInputDeviceList::onInputListLoudnessChanged(const QList<float>& loudne
     }
 
     for (auto i = 0; i < rowCount(); ++i) {
-        std::static_pointer_cast<AudioInputDevice>(_devices[i])->peak = Audio::loudnessToLevel(loudness[i]);
+        std::static_pointer_cast<AudioInputDevice>(_devices[i])->peak = loudness[i];
     }
 
     emit dataChanged(createIndex(0, 0), createIndex(rowCount() - 1, 0), { PeakRole });
