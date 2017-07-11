@@ -65,7 +65,7 @@ protected:
 
     static QHash<int, QByteArray> _roles;
     static Qt::ItemFlags _flags;
-
+    bool _userSelection { false };
     QAudio::Mode _mode { QAudio::AudioOutput };
     QAudioDeviceInfo _selectedDevice;
     QList<std::shared_ptr<AudioDevice>> _devices;
